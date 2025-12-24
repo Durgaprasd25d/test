@@ -1,0 +1,51 @@
+{
+    "expo": {
+        "name": "uber-tracking-app",
+        "slug": "uber-tracking-app",
+        "version": "1.0.0",
+        "orientation": "portrait",
+        "userInterfaceStyle": "light",
+        "assetBundlePatterns": [
+            "**/*"
+        ],
+        "ios": {
+            "supportsTablet": true,
+            "bundleIdentifier": "com.ubertracking.app",
+            "infoPlist": {
+                "NSLocationWhenInUseUsageDescription": "This app needs your location to track the driver in real-time.",
+                "NSLocationAlwaysAndWhenInUseUsageDescription": "This app needs your location to track the driver even when the app is in the background.",
+                "UIBackgroundModes": [
+                    "location"
+                ]
+            },
+            "config": {
+                "googleMapsApiKey": "AIzaSyBnA5Sw2GQC-Jt0rjH40qaGOx3vkALKWKA"
+            }
+        },
+        "android": {
+            "package": "com.ubertracking.app",
+            "permissions": [
+                "ACCESS_FINE_LOCATION",
+                "ACCESS_COARSE_LOCATION",
+                "ACCESS_BACKGROUND_LOCATION",
+                "FOREGROUND_SERVICE"
+            ],
+            "config": {
+                "googleMaps": {
+                    "apiKey": "AIzaSyBnA5Sw2GQC-Jt0rjH40qaGOx3vkALKWKA"
+                }
+            }
+        },
+        "web": {},
+        "plugins": [
+            [
+                "expo-location",
+                {
+                    "locationAlwaysAndWhenInUsePermission": "Allow $(PRODUCT_NAME) to use your location for driver tracking.",
+                    "locationAlwaysPermission": "Allow $(PRODUCT_NAME) to use your location in the background for continuous driver tracking.",
+                    "locationWhenInUsePermission": "Allow $(PRODUCT_NAME) to use your location for driver tracking."
+                }
+            ]
+        ]
+    }
+}

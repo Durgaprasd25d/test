@@ -1,0 +1,18 @@
+/**
+ * PLACEHOLDER CAR ICON
+ * 
+ * Since image generation is unavailable, you need to:
+ * 1. Find/create a top-down car icon (PNG, 40x40px recommended)
+ * 2. Save it as: mobile-app/assets/car-icon.png
+ * 
+ * Sources for free icons:
+ * - Flaticon.com
+ * - Icons8.com
+ * - The Noun Project
+ * 
+ * Search for: "car top view icon" or "vehicle marker icon"
+ * 
+ * Alternative: The app will work with React Native's default marker
+ * if this file is missing, but custom icon is recommended for
+ * better visual appearance.
+ */
