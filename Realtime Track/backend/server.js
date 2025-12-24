@@ -10,8 +10,11 @@ const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
 
+const mongoose = require('mongoose');
+
 // Import routes and socket handlers
 const locationRoutes = require('./routes/location');
+const rideRoutes = require('./routes/ride');
 const initializeLocationSocket = require('./sockets/locationSocket');
 
 // Initialize Express app
@@ -27,6 +30,15 @@ const io = new Server(server, {
     },
     transports: ['websocket', 'polling'], // Support both for reliability
 });
+
+// Store io in app for access in routes
+app.set('io', io);
+
+// MongoDB Connection
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/uber_tracking';
+mongoose.connect(MONGODB_URI)
+    .then(() => console.log('✅ Connected to MongoDB'))
+    .catch(err => console.error('❌ MongoDB connection error:', err));
 
 // Configuration
 const PORT = process.env.PORT || 3000;
@@ -49,6 +61,7 @@ if (NODE_ENV === 'development') {
 app.get('/health', (req, res) => {
     res.json({
         status: 'ok',
+        mongodb: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
         timestamp: new Date().toISOString(),
         uptime: process.uptime(),
     });
@@ -56,6 +69,7 @@ app.get('/health', (req, res) => {
 
 // API Routes
 app.use('/api', locationRoutes);
+app.use('/api/ride', rideRoutes);
 
 // Initialize Socket.IO handlers
 initializeLocationSocket(io);
@@ -72,12 +86,22 @@ app.get('/', (req, res) => {
                 get: '/api/driver/location/:rideId',
                 delete: '/api/driver/location/:rideId',
             },
+            ride: {
+                post_request: '/api/ride/request',
+                get_pending: '/api/ride/pending',
+                post_accept: '/api/ride/accept',
+                post_start: '/api/ride/start',
+                post_complete: '/api/ride/complete',
+            },
             websocket: {
                 events: [
                     'driver:join',
                     'driver:location:update',
                     'customer:join',
                     'customer:location:update',
+                    'ride:accepted',
+                    'ride:started',
+                    'ride:completed',
                 ],
             },
         },

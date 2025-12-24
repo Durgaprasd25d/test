@@ -168,6 +168,12 @@ class CustomerSocketService {
     getConnectionStatus() {
         return this.isConnected ? 'connected' : 'disconnected';
     }
+    /**
+     * Get the underlying socket instance
+     */
+    getSocket() {
+        return this.socket;
+    }
 }
 
 export default new CustomerSocketService();

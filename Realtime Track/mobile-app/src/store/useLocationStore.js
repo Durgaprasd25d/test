@@ -25,6 +25,10 @@ const useLocationStore = create((set, get) => ({
     // Ride info
     rideId: null,
     role: null, // 'driver' or 'customer'
+    rideStatus: null, // REQUESTED, ACCEPTED, STARTED, COMPLETED, CANCELLED
+    pickupLocation: null, // { address, latitude, longitude }
+    destinationLocation: null, // { address, latitude, longitude }
+    driverId: null,
 
     // Actions
     setLocation: (location) => {
@@ -51,6 +55,11 @@ const useLocationStore = create((set, get) => ({
         set({ isCameraFollowing: following });
     },
 
+    setRideStatus: (status) => set({ rideStatus: status }),
+    setPickupLocation: (location) => set({ pickupLocation: location }),
+    setDestinationLocation: (location) => set({ destinationLocation: location }),
+    setDriverId: (driverId) => set({ driverId }),
+
     setRideInfo: (rideId, role) => {
         set({ rideId, role });
     },
@@ -65,6 +74,10 @@ const useLocationStore = create((set, get) => ({
             lastUpdateTimestamp: null,
             rideId: null,
             role: null,
+            rideStatus: null,
+            pickupLocation: null,
+            destinationLocation: null,
+            driverId: null,
         });
     },
 
