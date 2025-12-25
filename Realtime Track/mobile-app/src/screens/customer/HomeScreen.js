@@ -37,6 +37,7 @@ export default function HomeScreen({ navigation }) {
         setUser(userData);
     };
 
+
     return (
         <SafeAreaView style={styles.container}>
             <StatusBar style="dark" />

@@ -243,6 +243,7 @@ export default function TechnicianDashboardScreen({ navigation }) {
                 onReject={handleRejectJob}
             />
         </SafeAreaView>
+
     );
 }
 

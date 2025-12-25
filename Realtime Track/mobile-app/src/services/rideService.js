@@ -8,7 +8,7 @@ const rideService = {
     /**
      * Request an AC service job
      */
-    requestRide: async (pickup, destination, serviceType = 'service') => {
+    requestRide: async (pickup, destination, serviceType = 'service', paymentMethod = 'COD') => {
         try {
             const user = await authService.getUser();
             const customerId = user?.id || user?.mobile || 'demo_user';
@@ -17,7 +17,8 @@ const rideService = {
                 pickup,
                 destination,
                 serviceType,
-                customerId
+                customerId,
+                paymentMethod
             });
             return response.data;
         } catch (error) {
@@ -59,26 +60,47 @@ const rideService = {
     },
 
     /**
-     * Start the service job
+     * Verify Arrival (Entrance)
      */
-    startRide: async (rideId, driverId) => {
+    verifyArrival: async (rideId, otp) => {
         try {
-            const response = await axios.post(`${API_URL}/start`, { rideId, driverId });
+            const response = await axios.post(`${API_URL}/verify-arrival`, { rideId, otp });
             return response.data;
         } catch (error) {
-            return {
-                success: false,
-                error: error.response?.data?.error || 'Failed to start job'
-            };
+            return { success: false, error: 'Entrance verification failed' };
         }
     },
 
     /**
-     * Complete the service job
+     * Start the service job
      */
-    completeRide: async (rideId, driverId) => {
+    startService: async (rideId) => {
         try {
-            const response = await axios.post(`${API_URL}/complete`, { rideId, driverId });
+            const response = await axios.post(`${API_URL}/start-service`, { rideId });
+            return response.data;
+        } catch (error) {
+            return { success: false, error: 'Failed to start service' };
+        }
+    },
+
+    /**
+     * End the service (Generate Completion OTP)
+     */
+    endService: async (rideId) => {
+        try {
+            const response = await axios.post(`${API_URL}/end-service`, { rideId });
+            return response.data;
+        } catch (error) {
+            return { success: false, error: 'Failed to end service' };
+        }
+    },
+
+    /**
+     * Complete the service job (Verify Final OTP)
+     */
+    completeRide: async (rideId, otp) => {
+        try {
+            const response = await axios.post(`${API_URL}/complete`, { rideId, otp });
             return response.data;
         } catch (error) {
             return {

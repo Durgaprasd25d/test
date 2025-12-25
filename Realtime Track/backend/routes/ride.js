@@ -7,7 +7,7 @@ const Technician = require('../models/Technician');
 // Request a ride (Job)
 router.post('/request', async (req, res) => {
     try {
-        const { pickup, destination, serviceType, customerId } = req.body;
+        const { pickup, destination, serviceType, customerId, paymentMethod } = req.body;
         const rideId = `job_${Date.now()}`;
 
         const ride = new Ride({
@@ -16,7 +16,8 @@ router.post('/request', async (req, res) => {
             destination: destination || { address: 'TBD', lat: 0, lng: 0 },
             serviceType: serviceType || 'service',
             customerId,
-            status: 'REQUESTED'
+            status: 'REQUESTED',
+            paymentMethod: paymentMethod || 'COD'
         });
 
         await ride.save();
@@ -92,18 +93,20 @@ router.post('/accept', async (req, res) => {
         const { rideId, driverId } = req.body;
 
         const ride = await Ride.findOne({ rideId });
-        if (!ride || ride.status !== 'REQUESTED') {
+        if (!ride || (ride.status !== 'REQUESTED' && ride.status !== 'ACCEPTED')) {
             return res.status(404).json({ success: false, error: 'Job no longer available' });
         }
 
+        // Generate 4-digit Entrance OTP
+        const arrivalOtp = Math.floor(1000 + Math.random() * 9000).toString();
+
         ride.status = 'ACCEPTED';
         ride.driverId = driverId;
+        ride.arrivalOtp = arrivalOtp;
         await ride.save();
 
         // Use population to get technician user details
         const populatedRide = await Ride.findOne({ rideId }).populate('driverId');
-
-        console.log('📝 Updated Ride Record in DB:', JSON.stringify(ride, null, 2));
 
         // Fetch technician-specific profile info
         const technician = await Technician.findOne({ userId: driverId });
@@ -119,38 +122,40 @@ router.post('/accept', async (req, res) => {
             } : null
         };
 
-        console.log('✅ Technician accepted job:', rideId);
-        console.log('📤 Sending technician data:', technicianData);
+        console.log('✅ Technician accepted job:', rideId, '| Entrance OTP:', arrivalOtp);
 
         const io = req.app.get('io');
         io.to(`ride:${rideId}`).emit('ride:accepted', {
             rideId,
             driverId,
-            technician: technicianData // Send full technician data
+            technician: technicianData,
+            arrivalOtp // Send OTP to customer
         });
 
-        res.json({ success: true, data: ride });
+        res.json({ success: true, data: { ...ride.toObject(), technician: technicianData } });
     } catch (error) {
         console.error('❌ Accept job error:', error);
         res.status(500).json({ success: false, error: 'Server error' });
     }
 });
 
-// Start the job
-router.post('/start', async (req, res) => {
+// Verify Arrival OTP (Entrance)
+router.post('/verify-arrival', async (req, res) => {
     try {
-        const { rideId, driverId } = req.body;
+        const { rideId, otp } = req.body;
+        const ride = await Ride.findOne({ rideId });
 
-        const ride = await Ride.findOne({ rideId, driverId });
-        if (!ride) {
-            return res.status(404).json({ success: false, error: 'Job not found or unauthorized' });
+        if (!ride) return res.status(404).json({ success: false, error: 'Ride not found' });
+
+        if (ride.arrivalOtp !== otp) {
+            return res.status(400).json({ success: false, error: 'Invalid Entrance OTP' });
         }
 
-        ride.status = 'STARTED';
+        ride.status = 'ARRIVED';
         await ride.save();
 
         const io = req.app.get('io');
-        io.to(`ride:${rideId}`).emit('ride:started', { rideId });
+        io.to(`ride:${rideId}`).emit('ride:arrived', { rideId });
 
         res.json({ success: true, data: ride });
     } catch (error) {
@@ -158,17 +163,109 @@ router.post('/start', async (req, res) => {
     }
 });
 
-// Complete the job
+// Start the service
+router.post('/start-service', async (req, res) => {
+    try {
+        const { rideId } = req.body;
+        const ride = await Ride.findOne({ rideId });
+        if (!ride) return res.status(404).json({ success: false, error: 'Ride not found' });
+
+        ride.status = 'IN_PROGRESS';
+        await ride.save();
+
+        const io = req.app.get('io');
+        io.to(`ride:${rideId}`).emit('ride:in_progress', { rideId });
+
+        res.json({ success: true, data: ride });
+    } catch (error) {
+        res.status(500).json({ success: false, error: 'Server error' });
+    }
+});
+
+// Update payment method
+router.post('/update-payment-method', async (req, res) => {
+    try {
+        const { rideId, paymentMethod } = req.body;
+        const ride = await Ride.findOne({ rideId });
+        if (!ride) return res.status(404).json({ success: false, error: 'Ride not found' });
+
+        ride.paymentMethod = paymentMethod;
+        await ride.save();
+
+        const io = req.app.get('io');
+        io.to(`ride:${rideId}`).emit('payment:method_updated', { rideId, paymentMethod });
+
+        res.json({ success: true, data: ride });
+    } catch (error) {
+        res.status(500).json({ success: false, error: 'Server error' });
+    }
+});
+
+// End the service (Complete)
+router.post('/end-service', async (req, res) => {
+    try {
+        const { rideId } = req.body;
+        const ride = await Ride.findOne({ rideId });
+        if (!ride) return res.status(404).json({ success: false, error: 'Ride not found' });
+
+        // Generate 5-digit Main OTP for completion
+        const completionOtp = Math.floor(10000 + Math.random() * 90000).toString();
+        ride.completionOtp = completionOtp;
+
+        // If COD, we can show OTP immediately to complete.
+        // If ONLINE, it remains hidden until paymentStatus is PAID.
+        await ride.save();
+
+        const io = req.app.get('io');
+        io.to(`ride:${rideId}`).emit('ride:service_ended', {
+            rideId,
+            paymentMethod: ride.paymentMethod,
+            completionOtp: ride.paymentMethod === 'COD' ? completionOtp : null // Only send if COD
+        });
+
+        res.json({ success: true, data: ride });
+    } catch (error) {
+        res.status(500).json({ success: false, error: 'Server error' });
+    }
+});
+
+// Mock Payment Success (For Online Payment)
+router.post('/payment-success', async (req, res) => {
+    try {
+        const { rideId } = req.body;
+        const ride = await Ride.findOne({ rideId });
+        if (!ride) return res.status(404).json({ success: false, error: 'Ride not found' });
+
+        ride.paymentStatus = 'PAID';
+        await ride.save();
+
+        const io = req.app.get('io');
+        // Sending OTP now that payment is successful
+        io.to(`ride:${rideId}`).emit('payment:success', {
+            rideId,
+            completionOtp: ride.completionOtp
+        });
+
+        res.json({ success: true, data: ride });
+    } catch (error) {
+        res.status(500).json({ success: false, error: 'Server error' });
+    }
+});
+
+// Complete the job (Verify Final OTP)
 router.post('/complete', async (req, res) => {
     try {
-        const { rideId, driverId } = req.body;
+        const { rideId, otp } = req.body;
 
-        const ride = await Ride.findOne({ rideId, driverId });
-        if (!ride) {
-            return res.status(404).json({ success: false, error: 'Job not found or unauthorized' });
+        const ride = await Ride.findOne({ rideId });
+        if (!ride) return res.status(404).json({ success: false, error: 'Job not found' });
+
+        if (ride.completionOtp !== otp) {
+            return res.status(400).json({ success: false, error: 'Invalid Completion OTP' });
         }
 
         ride.status = 'COMPLETED';
+        ride.paymentStatus = 'VERIFIED';
         await ride.save();
 
         const io = req.app.get('io');
@@ -179,6 +276,7 @@ router.post('/complete', async (req, res) => {
         res.status(500).json({ success: false, error: 'Server error' });
     }
 });
+
 
 // Get job history
 router.get('/history/:userId', async (req, res) => {

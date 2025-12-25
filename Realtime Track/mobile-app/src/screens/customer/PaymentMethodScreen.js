@@ -57,7 +57,8 @@ export default function PaymentMethodScreen({ route, navigation }) {
             const response = await rideService.requestRide(
                 pickupLocation,
                 { address: 'Technician Hub', lat: 0, lng: 0 },
-                mappedServiceType
+                mappedServiceType,
+                selectedMethod.toUpperCase() // Ensure it's 'COD' or 'ONLINE'
             );
 
             console.log('Booking response:', response);

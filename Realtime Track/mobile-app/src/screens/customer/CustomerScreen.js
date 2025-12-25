@@ -9,6 +9,7 @@ import {
     Dimensions,
     Linking,
     Alert,
+    Modal,
 } from 'react-native';
 import MapView, { PROVIDER_GOOGLE, Marker } from 'react-native-maps';
 import MapViewDirections from 'react-native-maps-directions';
@@ -45,6 +46,10 @@ export default function CustomerScreen({ route }) {
     const [isPolling, setIsPolling] = useState(false);
     const [onlineTechnicians, setOnlineTechnicians] = useState([]);
     const [assignedTech, setAssignedTech] = useState(null);
+    const [entranceOtp, setEntranceOtp] = useState(null);
+    const [mainOtp, setMainOtp] = useState(null);
+    const [paymentMethod, setPaymentMethod] = useState('COD');
+    const [showPaymentModal, setShowPaymentModal] = useState(false);
     const assignedTechRef = useRef(null);
 
     // Sync ref with state
@@ -109,7 +114,7 @@ export default function CustomerScreen({ route }) {
                     });
                 }
 
-                if (ride.status === 'ACCEPTED' || ride.status === 'STARTED') {
+                if (ride.status === 'ACCEPTED' || ride.status === 'STARTED' || ride.status === 'ARRIVED' || ride.status === 'IN_PROGRESS' || ride.status === 'COMPLETED') {
                     console.log('👨‍🔧 Technician already assigned:', ride.technician?.name);
                     setAssignedTech(ride.technician);
 
@@ -125,7 +130,17 @@ export default function CustomerScreen({ route }) {
                     }
 
                     setRideStatus(ride.status);
-                    setStatusMessage(ride.status === 'ACCEPTED' ? 'Technician is on the way!' : 'Technician started the job');
+                    setEntranceOtp(ride.arrivalOtp);
+                    setMainOtp(ride.completionOtp);
+                    setPaymentMethod(ride.paymentMethod || 'COD');
+
+                    const messages = {
+                        'ACCEPTED': 'Technician is on the way!',
+                        'ARRIVED': 'Technician has arrived!',
+                        'IN_PROGRESS': 'Service in progress...',
+                        'COMPLETED': 'Service Completed!'
+                    };
+                    setStatusMessage(messages[ride.status] || 'Technician is here');
                     setOnlineTechnicians([]);
                 }
             }
@@ -134,47 +149,77 @@ export default function CustomerScreen({ route }) {
         }
     };
 
+    const handlePaymentChange = async (method) => {
+        try {
+            const response = await fetch(`${config.BACKEND_URL}/api/ride/update-payment-method`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ rideId, paymentMethod: method })
+            });
+            const result = await response.json();
+            if (result.success) {
+                setPaymentMethod(method);
+                setShowPaymentModal(false);
+            }
+        } catch (error) {
+            console.error('Update payment error:', error);
+            Alert.alert('Error', 'Could not update payment method');
+        }
+    };
 
 
     useEffect(() => {
         const socket = customerSocketService.getSocket();
         if (socket) {
             socket.on('ride:accepted', (data) => {
-                console.log('========================================');
-                console.log('✅ TECHNICIAN ACCEPTED JOB');
-                console.log('👤 Technician Data:', JSON.stringify(data.technician, null, 2));
-
                 setAssignedTech(data.technician);
-
-                // Set initial live location from socket data
-                if (data.technician?.location) {
-                    const initialLoc = {
-                        latitude: data.technician.location.lat,
-                        longitude: data.technician.location.lng,
-                        timestamp: Date.now()
-                    };
-                    console.log('📍 Setting initial technician location from Socket:', initialLoc);
-                    setCurrentLocation(initialLoc);
-                }
-
+                setEntranceOtp(data.arrivalOtp);
                 setRideStatus('ACCEPTED');
                 setStatusMessage('Technician is on the way!');
-                setAssignedTech(data.technician);
-                setOnlineTechnicians([]); // Clear all markers, show only assigned
+                setOnlineTechnicians([]);
+            });
 
-                console.log('✅ Display updated with technician:', data.technician?.name);
+            socket.on('ride:arrived', () => {
+                setRideStatus('ARRIVED');
+                setStatusMessage('Technician has arrived!');
             });
-            socket.on('ride:started', (data) => {
-                setRideStatus('STARTED');
-                setStatusMessage('Technician started the job');
-                navigation.navigate('ServiceStatus', { rideId, otp: data.otp || '1234' });
+
+            socket.on('ride:in_progress', () => {
+                setRideStatus('IN_PROGRESS');
+                setStatusMessage('Service in progress...');
             });
+
+            socket.on('payment:method_updated', (data) => {
+                setPaymentMethod(data.paymentMethod);
+                Alert.alert('Payment Updated', `Payment method changed to ${data.paymentMethod}`);
+            });
+
+            socket.on('ride:service_ended', (data) => {
+                if (data.completionOtp) setMainOtp(data.completionOtp);
+                setStatusMessage('Service ended. Please provide OTP to complete.');
+            });
+
+            socket.on('payment:success', (data) => {
+                setMainOtp(data.completionOtp);
+                Alert.alert('Payment Successful', 'Payment confirmed! Please share the OTP with the technician.');
+            });
+
             socket.on('ride:completed', () => {
                 setRideStatus('COMPLETED');
-                setStatusMessage('Job completed successfully!');
+                setStatusMessage('Service Completed!');
             });
+
+            return () => {
+                socket.off('ride:accepted');
+                socket.off('ride:arrived');
+                socket.off('ride:in_progress');
+                socket.off('payment:method_updated');
+                socket.off('ride:service_ended');
+                socket.off('payment:success');
+                socket.off('ride:completed');
+            };
         }
-    }, [connectionStatus]);
+    }, [rideId]);
 
     const handleConnectionChange = (status) => {
         setConnectionStatus(status);
@@ -330,7 +375,16 @@ export default function CustomerScreen({ route }) {
             </View>
 
             <View style={styles.bottomSheet}>
-                <Text style={styles.rideIdText}>JOB ID: {rideId?.substring(0, 8).toUpperCase()}</Text>
+                <View style={styles.sheetHeader}>
+                    <Text style={styles.rideIdText}>JOB ID: {rideId?.substring(4, 12).toUpperCase()}</Text>
+                    {entranceOtp && (rideStatus === 'ACCEPTED' || rideStatus === 'REQUESTED') && (
+                        <View style={styles.otpBadge}>
+                            <Text style={styles.otpLabel}>ENTRANCE OTP</Text>
+                            <Text style={styles.otpValue}>{entranceOtp}</Text>
+                        </View>
+                    )}
+                </View>
+
 
                 <View style={styles.technicianCard}>
                     <View style={styles.avatarContainer}>
@@ -365,6 +419,33 @@ export default function CustomerScreen({ route }) {
                     </TouchableOpacity>
                 </View>
 
+                {/* Service Completion OTP */}
+                {mainOtp && (
+                    <View style={styles.mainOtpContainer}>
+                        <Text style={styles.mainOtpTitle}>SERVICE COMPLETION OTP</Text>
+                        <Text style={styles.mainOtpCode}>{mainOtp}</Text>
+                        <Text style={styles.mainOtpHelper}>Share this with technician to finish the job</Text>
+                    </View>
+                )}
+
+                {/* Payment Method Section */}
+                <View style={styles.paymentRow}>
+                    <View style={styles.paymentInfo}>
+                        <Ionicons
+                            name={paymentMethod === 'COD' ? 'cash-outline' : 'card-outline'}
+                            size={20}
+                            color={COLORS.roseGold}
+                        />
+                        <Text style={styles.paymentLabel}>PAYMENT: {paymentMethod}</Text>
+                    </View>
+                    <TouchableOpacity
+                        style={styles.changeBtn}
+                        onPress={() => setShowPaymentModal(true)}
+                    >
+                        <Text style={styles.changeBtnText}>CHANGE</Text>
+                    </TouchableOpacity>
+                </View>
+
                 <View style={styles.locationContainer}>
                     <View style={styles.dotLine}>
                         <View style={[styles.dot, { backgroundColor: COLORS.roseGold }]} />
@@ -386,6 +467,42 @@ export default function CustomerScreen({ route }) {
                         <Text style={styles.doneBtnText}>BACK TO HOME</Text>
                     </TouchableOpacity>
                 )}
+
+                {/* Payment Change Modal */}
+                <Modal
+                    visible={showPaymentModal}
+                    transparent={true}
+                    animationType="slide"
+                >
+                    <View style={styles.modalOverlay}>
+                        <View style={styles.modalContent}>
+                            <Text style={styles.modalTitle}>Choose Payment Method</Text>
+
+                            <TouchableOpacity
+                                style={[styles.methodOption, paymentMethod === 'COD' && styles.methodSelected]}
+                                onPress={() => handlePaymentChange('COD')}
+                            >
+                                <Ionicons name="cash" size={24} color={paymentMethod === 'COD' ? COLORS.white : COLORS.roseGold} />
+                                <Text style={[styles.methodText, paymentMethod === 'COD' && styles.methodTextSelected]}>Cash on Service</Text>
+                            </TouchableOpacity>
+
+                            <TouchableOpacity
+                                style={[styles.methodOption, paymentMethod === 'ONLINE' && styles.methodSelected]}
+                                onPress={() => handlePaymentChange('ONLINE')}
+                            >
+                                <Ionicons name="card" size={24} color={paymentMethod === 'ONLINE' ? COLORS.white : COLORS.roseGold} />
+                                <Text style={[styles.methodText, paymentMethod === 'ONLINE' && styles.methodTextSelected]}>Pay Online</Text>
+                            </TouchableOpacity>
+
+                            <TouchableOpacity
+                                style={styles.closeBtn}
+                                onPress={() => setShowPaymentModal(false)}
+                            >
+                                <Text style={styles.closeBtnText}>CANCEL</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </Modal>
             </View>
         </View>
     );
@@ -443,10 +560,136 @@ const styles = StyleSheet.create({
     rideIdText: {
         fontSize: 10,
         color: COLORS.grey,
-        marginBottom: SPACING.md,
         fontWeight: 'bold',
         letterSpacing: 1,
-        textAlign: 'center'
+    },
+    sheetHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: SPACING.md,
+    },
+    otpBadge: {
+        backgroundColor: COLORS.technicianBg,
+        paddingHorizontal: SPACING.sm,
+        paddingVertical: 4,
+        borderRadius: 8,
+        alignItems: 'center',
+    },
+    otpLabel: {
+        fontSize: 8,
+        color: COLORS.technicianPrimary,
+        fontWeight: 'bold',
+    },
+    otpValue: {
+        fontSize: 14,
+        color: COLORS.technicianPrimary,
+        fontWeight: '900',
+        letterSpacing: 2,
+    },
+    mainOtpContainer: {
+        backgroundColor: '#F8F9FA',
+        padding: SPACING.md,
+        borderRadius: 16,
+        alignItems: 'center',
+        marginVertical: SPACING.sm,
+        borderWidth: 1,
+        borderColor: '#EEE',
+    },
+    mainOtpTitle: {
+        fontSize: 10,
+        color: COLORS.grey,
+        fontWeight: 'bold',
+        marginBottom: 4,
+    },
+    mainOtpCode: {
+        fontSize: 28,
+        color: COLORS.black,
+        fontWeight: '900',
+        letterSpacing: 8,
+    },
+    mainOtpHelper: {
+        fontSize: 10,
+        color: COLORS.grey,
+        marginTop: 4,
+    },
+    paymentRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        paddingVertical: SPACING.sm,
+        borderBottomWidth: 1,
+        borderBottomColor: '#F0F0F0',
+        marginBottom: SPACING.sm,
+    },
+    paymentInfo: {
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    paymentLabel: {
+        fontSize: 12,
+        fontWeight: '700',
+        color: COLORS.black,
+        marginLeft: 8,
+    },
+    changeBtn: {
+        backgroundColor: COLORS.roseGold + '15',
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+        borderRadius: 12,
+    },
+    changeBtnText: {
+        fontSize: 10,
+        fontWeight: 'bold',
+        color: COLORS.roseGold,
+    },
+    modalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        justifyContent: 'flex-end',
+    },
+    modalContent: {
+        backgroundColor: COLORS.white,
+        padding: SPACING.xl,
+        borderTopLeftRadius: 32,
+        borderTopRightRadius: 32,
+    },
+    modalTitle: {
+        fontSize: 18,
+        fontWeight: 'bold',
+        color: COLORS.black,
+        marginBottom: SPACING.xl,
+        textAlign: 'center',
+    },
+    methodOption: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        padding: SPACING.lg,
+        borderRadius: 16,
+        backgroundColor: '#F8F9FA',
+        marginBottom: SPACING.md,
+    },
+    methodSelected: {
+        backgroundColor: COLORS.roseGold,
+    },
+    methodText: {
+        fontSize: 16,
+        fontWeight: '600',
+        color: COLORS.black,
+        marginLeft: SPACING.md,
+    },
+    methodTextSelected: {
+        color: COLORS.white,
+    },
+    closeBtn: {
+        marginTop: SPACING.md,
+        padding: SPACING.md,
+        alignItems: 'center',
+    },
+    closeBtnText: {
+        fontSize: 14,
+        fontWeight: 'bold',
+        color: COLORS.grey,
     },
     technicianCard: {
         flexDirection: 'row',

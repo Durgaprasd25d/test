@@ -34,8 +34,21 @@ const RideSchema = new mongoose.Schema({
     },
     status: {
         type: String,
-        enum: ['REQUESTED', 'ACCEPTED', 'STARTED', 'COMPLETED', 'CANCELLED'],
+        enum: ['REQUESTED', 'ACCEPTED', 'ARRIVED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED'],
         default: 'REQUESTED'
+    },
+    arrivalOtp: {
+        type: String,
+        default: null
+    },
+    completionOtp: {
+        type: String,
+        default: null
+    },
+    paymentStatus: {
+        type: String,
+        enum: ['PENDING', 'PAID', 'VERIFIED'],
+        default: 'PENDING'
     },
     price: {
         type: Number,
