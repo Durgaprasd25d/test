@@ -43,11 +43,14 @@ class PollingService {
      * Poll server for latest location
      */
     async poll() {
-        if (!this.rideId || !this.onLocationUpdate) return;
+        const callback = this.onLocationUpdate;
+        const currentRideId = this.rideId;
+
+        if (!currentRideId || !callback) return;
 
         try {
             const response = await fetch(
-                `${config.BACKEND_URL}/api/driver/location/${this.rideId}`,
+                `${config.BACKEND_URL}/api/driver/location/${currentRideId}`,
                 {
                     method: 'GET',
                     headers: {
@@ -59,8 +62,8 @@ class PollingService {
             if (response.ok) {
                 const result = await response.json();
 
-                if (result.success && result.data) {
-                    this.onLocationUpdate(result.data);
+                if (result.success && result.data && this.isPolling) {
+                    callback(result.data);
                 }
             } else if (response.status === 404) {
                 // No location data available yet

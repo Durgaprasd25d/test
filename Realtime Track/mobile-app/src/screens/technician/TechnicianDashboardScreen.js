@@ -10,6 +10,7 @@ import JobCard from '../../components/JobCard';
 import JobRequestModal from '../../components/JobRequestModal';
 import technicianService from '../../services/technicianService';
 import authService from '../../services/authService';
+import config from '../../constants/config';
 import technicianSocketService from '../../services/technicianSocketService';
 import rideService from '../../services/rideService';
 

@@ -32,7 +32,8 @@ export default function CustomerScreen({ route }) {
     const {
         rideStatus,
         setRideStatus,
-        pickupLocation
+        pickupLocation,
+        setPickupLocation
     } = useLocationStore();
 
     const [connectionStatus, setConnectionStatus] = useState('connecting');
@@ -44,17 +45,27 @@ export default function CustomerScreen({ route }) {
     const [isPolling, setIsPolling] = useState(false);
     const [onlineTechnicians, setOnlineTechnicians] = useState([]);
     const [assignedTech, setAssignedTech] = useState(null);
+    const assignedTechRef = useRef(null);
+
+    // Sync ref with state
+    useEffect(() => {
+        assignedTechRef.current = assignedTech;
+    }, [assignedTech]);
 
     useEffect(() => {
-        // Fetch online technicians initially
+        // Fetch initially
         fetchOnlineTechnicians();
+        fetchRideDetails();
 
         // Refresh every 10 seconds until assigned
         const intervalId = setInterval(() => {
-            if (!assignedTech) {
+            if (!assignedTechRef.current) {
+                console.log('⏱️ Periodic refresh check...');
                 fetchOnlineTechnicians();
+                fetchRideDetails();
             }
         }, 10000);
+
 
         customerSocketService.connect(
             rideId,
@@ -67,7 +78,7 @@ export default function CustomerScreen({ route }) {
             customerSocketService.disconnect();
             pollingService.stop();
         };
-    }, [rideId, assignedTech]);
+    }, [rideId]); // REMOVED assignedTech dependency to stop infinite loop
 
     const fetchOnlineTechnicians = async () => {
         const result = await technicianMapService.getOnlineTechnicians();
@@ -77,6 +88,53 @@ export default function CustomerScreen({ route }) {
         }
     };
 
+    const fetchRideDetails = async () => {
+        try {
+            console.log('🔍 Fetching ride details for:', rideId);
+            const response = await fetch(`${config.BACKEND_URL}/api/ride/${rideId}`);
+            const result = await response.json();
+
+            console.log('📄 Ride details response:', JSON.stringify(result, null, 2));
+
+            if (result.success && result.data) {
+                const ride = result.data;
+                console.log('🚦 Current ride status:', ride.status);
+
+                // Set pickup location from DB
+                if (ride.pickup) {
+                    setPickupLocation({
+                        address: ride.pickup.address,
+                        latitude: ride.pickup.lat,
+                        longitude: ride.pickup.lng
+                    });
+                }
+
+                if (ride.status === 'ACCEPTED' || ride.status === 'STARTED') {
+                    console.log('👨‍🔧 Technician already assigned:', ride.technician?.name);
+                    setAssignedTech(ride.technician);
+
+                    // Set initial live location from DB if available
+                    if (ride.technician?.location) {
+                        const initialLoc = {
+                            latitude: ride.technician.location.lat,
+                            longitude: ride.technician.location.lng,
+                            timestamp: Date.now()
+                        };
+                        console.log('📍 Setting initial technician location from DB:', initialLoc);
+                        setCurrentLocation(initialLoc);
+                    }
+
+                    setRideStatus(ride.status);
+                    setStatusMessage(ride.status === 'ACCEPTED' ? 'Technician is on the way!' : 'Technician started the job');
+                    setOnlineTechnicians([]);
+                }
+            }
+        } catch (error) {
+            console.error('❌ Error fetching ride details:', error);
+        }
+    };
+
+
 
     useEffect(() => {
         const socket = customerSocketService.getSocket();
@@ -84,11 +142,20 @@ export default function CustomerScreen({ route }) {
             socket.on('ride:accepted', (data) => {
                 console.log('========================================');
                 console.log('✅ TECHNICIAN ACCEPTED JOB');
-                console.log('Full data received:', JSON.stringify(data, null, 2));
-                console.log('Technician info:', data.technician);
-                console.log('Technician name:', data.technician?.name);
-                console.log('Technician phone:', data.technician?.phone);
-                console.log('========================================');
+                console.log('👤 Technician Data:', JSON.stringify(data.technician, null, 2));
+
+                setAssignedTech(data.technician);
+
+                // Set initial live location from socket data
+                if (data.technician?.location) {
+                    const initialLoc = {
+                        latitude: data.technician.location.lat,
+                        longitude: data.technician.location.lng,
+                        timestamp: Date.now()
+                    };
+                    console.log('📍 Setting initial technician location from Socket:', initialLoc);
+                    setCurrentLocation(initialLoc);
+                }
 
                 setRideStatus('ACCEPTED');
                 setStatusMessage('Technician is on the way!');
@@ -125,7 +192,9 @@ export default function CustomerScreen({ route }) {
     };
 
     const handleLocationUpdate = (locationData) => {
-        console.log('📍 Location update received:', locationData);
+        console.log('========================================');
+        console.log('📍 CUSTOMER: Location update received');
+        console.log('Raw data:', JSON.stringify(locationData, null, 2));
 
         const newLocation = {
             latitude: locationData.lat,
@@ -133,23 +202,25 @@ export default function CustomerScreen({ route }) {
             timestamp: locationData.timestamp || Date.now(),
         };
 
-        console.log('New tech location:', newLocation);
+        console.log('📌 New coordinates:', newLocation.latitude.toFixed(6), newLocation.longitude.toFixed(6));
+        console.log('⏰ Timestamp:', new Date(newLocation.timestamp).toLocaleTimeString());
 
-        // Remove GPS noise filter - accept all updates for smooth tracking
-        // if (currentLocation && isGPSNoise(currentLocation, newLocation, config.GPS_NOISE_THRESHOLD)) {
-        //     console.log('GPS noise detected, ignoring update');
-        //     return;
-        // }
+        // Always update - no filtering for customer side
+        if (currentLocation) {
+            const moved = Math.abs(currentLocation.latitude - newLocation.latitude) +
+                Math.abs(currentLocation.longitude - newLocation.longitude);
+            console.log('🔄 Position change:', moved > 0.00001 ? 'MOVED ✅' : 'SAME ⚠️');
+        }
 
         setPreviousLocation(currentLocation);
         setCurrentLocation(newLocation);
         setBearing(locationData.bearing || 0);
 
-        // Don't move camera on every update - let route fit handle it
-        // if (isCameraFollowing && mapRef.current) {
-        //     mapRef.current.animateToRegion(getCameraRegion(newLocation), 1000);
-        // }
+        console.log('✅ CUSTOMER: State updated - marker should move');
+        console.log('========================================');
     };
+
+
 
 
     return (
@@ -161,8 +232,8 @@ export default function CustomerScreen({ route }) {
                 provider={PROVIDER_GOOGLE}
                 style={styles.map}
                 initialRegion={{
-                    latitude: pickupLocation?.lat || 20.2961,
-                    longitude: pickupLocation?.lng || 85.8245,
+                    latitude: pickupLocation?.latitude || 20.2605, // Updated to match Jagamara area or default
+                    longitude: pickupLocation?.longitude || 85.7922,
                     latitudeDelta: 0.05,
                     longitudeDelta: 0.05,
                 }}
@@ -206,9 +277,11 @@ export default function CustomerScreen({ route }) {
                 )}
 
                 {pickupLocation && (
-
                     <Marker
-                        coordinate={{ latitude: pickupLocation.lat, longitude: pickupLocation.lng }}
+                        coordinate={{
+                            latitude: pickupLocation.latitude,
+                            longitude: pickupLocation.longitude
+                        }}
                     >
                         <View style={styles.destMarker}>
                             <Ionicons name="location" size={24} color={COLORS.roseGold} />
@@ -223,8 +296,8 @@ export default function CustomerScreen({ route }) {
                             longitude: currentLocation.longitude
                         }}
                         destination={{
-                            latitude: pickupLocation.lat,
-                            longitude: pickupLocation.lng
+                            latitude: pickupLocation.latitude,
+                            longitude: pickupLocation.longitude
                         }}
                         apikey={config.GOOGLE_MAPS_API_KEY}
                         strokeWidth={5}
@@ -267,6 +340,13 @@ export default function CustomerScreen({ route }) {
                         <Text style={styles.technicianName}>
                             {assignedTech?.name || 'Professional Technician'}
                         </Text>
+                        <View style={styles.techRatingRow}>
+                            <View style={styles.ratingBadge}>
+                                <Ionicons name="star" size={12} color={COLORS.warning} />
+                                <Text style={styles.ratingText}>{assignedTech?.rating || '4.5'}</Text>
+                            </View>
+                            <Text style={styles.techPhone}>{assignedTech?.phone || ''}</Text>
+                        </View>
                         <View style={styles.badge}>
                             <Text style={styles.badgeText}>{rideStatus || 'ALLOCATING'}</Text>
                         </View>
@@ -394,6 +474,18 @@ const styles = StyleSheet.create({
         alignSelf: 'flex-start'
     },
     badgeText: { fontSize: 9, fontWeight: '800', color: COLORS.roseGold, textTransform: 'uppercase' },
+    techRatingRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
+    ratingBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#FFF8E1',
+        paddingHorizontal: 6,
+        paddingVertical: 2,
+        borderRadius: 6,
+        marginRight: 8,
+    },
+    ratingText: { fontSize: 12, fontWeight: 'bold', color: COLORS.warning, marginLeft: 2 },
+    techPhone: { fontSize: 12, color: COLORS.grey, fontWeight: '500' },
     callCircle: {
         width: 44,
         height: 44,

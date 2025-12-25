@@ -23,11 +23,13 @@ const RideSchema = new mongoose.Schema({
         default: 'service'
     },
     customerId: {
-        type: String,
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
         default: null
     },
     driverId: {
-        type: String,
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
         default: null
     },
     status: {

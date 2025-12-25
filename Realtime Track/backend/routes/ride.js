@@ -1,6 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const Ride = require('../models/Ride');
+const Technician = require('../models/Technician');
+
 
 // Request a ride (Job)
 router.post('/request', async (req, res) => {
@@ -35,6 +37,45 @@ router.post('/request', async (req, res) => {
     }
 });
 
+// Get a single ride by rideId
+router.get('/:rideId', async (req, res) => {
+    try {
+        const { rideId } = req.params;
+        const ride = await Ride.findOne({ rideId }).populate('driverId');
+
+        if (!ride) {
+            return res.status(404).json({ success: false, error: 'Ride not found' });
+        }
+
+        // Fetch technician profile if assigned
+        let technicianData = null;
+        if (ride.driverId) {
+            const technician = await Technician.findOne({ userId: ride.driverId._id });
+            technicianData = {
+                id: ride.driverId._id,
+                name: ride.driverId.name,
+                phone: ride.driverId.mobile,
+                rating: technician?.stats?.rating || 4.5,
+                location: technician?.currentLocation ? {
+                    lat: technician.currentLocation.lat,
+                    lng: technician.currentLocation.lng
+                } : null
+            };
+        }
+
+        res.json({
+            success: true,
+            data: {
+                ...ride.toObject(),
+                technician: technicianData
+            }
+        });
+    } catch (error) {
+        console.error('Fetch ride error:', error);
+        res.status(500).json({ success: false, error: 'Server error' });
+    }
+});
+
 // Get pending jobs (for technicians)
 router.get('/pending', async (req, res) => {
     try {
@@ -59,11 +100,38 @@ router.post('/accept', async (req, res) => {
         ride.driverId = driverId;
         await ride.save();
 
+        // Use population to get technician user details
+        const populatedRide = await Ride.findOne({ rideId }).populate('driverId');
+
+        console.log('📝 Updated Ride Record in DB:', JSON.stringify(ride, null, 2));
+
+        // Fetch technician-specific profile info
+        const technician = await Technician.findOne({ userId: driverId });
+
+        const technicianData = {
+            id: driverId,
+            name: populatedRide.driverId?.name || 'Professional Technician',
+            phone: populatedRide.driverId?.mobile || null,
+            rating: technician?.stats?.rating || 4.5,
+            location: technician?.currentLocation ? {
+                lat: technician.currentLocation.lat,
+                lng: technician.currentLocation.lng
+            } : null
+        };
+
+        console.log('✅ Technician accepted job:', rideId);
+        console.log('📤 Sending technician data:', technicianData);
+
         const io = req.app.get('io');
-        io.to(`ride:${rideId}`).emit('ride:accepted', { rideId, driverId });
+        io.to(`ride:${rideId}`).emit('ride:accepted', {
+            rideId,
+            driverId,
+            technician: technicianData // Send full technician data
+        });
 
         res.json({ success: true, data: ride });
     } catch (error) {
+        console.error('❌ Accept job error:', error);
         res.status(500).json({ success: false, error: 'Server error' });
     }
 });
