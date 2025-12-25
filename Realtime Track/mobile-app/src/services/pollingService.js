@@ -17,26 +17,26 @@ class PollingService {
     /**
      * Start polling for location updates
      * @param {string} rideId - Ride identifier
-     * @param {function} onLocationUpdate - Callback for location data
+     * @param {function} onLocationUpdate - Callback for location updates
      */
     start(rideId, onLocationUpdate) {
-        if (this.isPolling) {
-            this.stop();
+        if (!rideId || !onLocationUpdate) {
+            console.error('Cannot start polling: missing rideId or callback');
+            return;
         }
 
+        // Stop any existing polling
+        this.stop();
+
         this.rideId = rideId;
-        this.onLocationUpdate = onLocationUpdate;
+        this.onLocationUpdate = onLocationUpdate; // Store callback
         this.isPolling = true;
 
-        console.log('Starting polling fallback for ride:', rideId);
+        console.log(`Starting polling fallback for ride: ${rideId}`);
 
-        // Initial poll
+        // Start polling immediately, then every interval
         this.poll();
-
-        // Set up interval
-        this.intervalId = setInterval(() => {
-            this.poll();
-        }, config.POLLING_INTERVAL);
+        this.intervalId = setInterval(() => this.poll(), config.POLLING_INTERVAL);
     }
 
     /**

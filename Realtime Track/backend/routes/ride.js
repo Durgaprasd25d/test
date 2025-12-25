@@ -2,50 +2,57 @@ const express = require('express');
 const router = express.Router();
 const Ride = require('../models/Ride');
 
-// Request a ride
+// Request a ride (Job)
 router.post('/request', async (req, res) => {
     try {
-        const { pickup, destination } = req.body;
-        const rideId = `ride_${Date.now()}`;
+        const { pickup, destination, serviceType, customerId } = req.body;
+        const rideId = `job_${Date.now()}`;
 
         const ride = new Ride({
             rideId,
             pickup,
-            destination,
+            destination: destination || { address: 'TBD', lat: 0, lng: 0 },
+            serviceType: serviceType || 'service',
+            customerId,
             status: 'REQUESTED'
         });
 
         await ride.save();
 
         const io = req.app.get('io');
-        // Broadcast to all potential drivers (joining no specific room yet)
-        io.emit('ride:requested', { rideId, pickup, destination });
+        // Broadcast to all potential technicians
+        io.emit('ride:requested', {
+            rideId,
+            pickup,
+            destination,
+            serviceType: ride.serviceType
+        });
 
         res.json({ success: true, data: ride });
     } catch (error) {
-        console.error('Ride request error:', error);
+        console.error('Job request error:', error);
         res.status(500).json({ success: false, error: 'Server error' });
     }
 });
 
-// Get pending rides (for drivers)
+// Get pending jobs (for technicians)
 router.get('/pending', async (req, res) => {
     try {
-        const rides = await Ride.find({ status: 'REQUESTED' }).sort({ timestamp: -1 });
+        const rides = await Ride.find({ status: 'REQUESTED' }).sort({ createdAt: -1 });
         res.json({ success: true, data: rides });
     } catch (error) {
         res.status(500).json({ success: false, error: 'Server error' });
     }
 });
 
-// Accept a ride
+// Accept a job
 router.post('/accept', async (req, res) => {
     try {
         const { rideId, driverId } = req.body;
 
         const ride = await Ride.findOne({ rideId });
         if (!ride || ride.status !== 'REQUESTED') {
-            return res.status(404).json({ success: false, error: 'Ride no longer available' });
+            return res.status(404).json({ success: false, error: 'Job no longer available' });
         }
 
         ride.status = 'ACCEPTED';
@@ -53,8 +60,6 @@ router.post('/accept', async (req, res) => {
         await ride.save();
 
         const io = req.app.get('io');
-        // Notify the specific customer room
-        // Rooms use ride:rideId format now
         io.to(`ride:${rideId}`).emit('ride:accepted', { rideId, driverId });
 
         res.json({ success: true, data: ride });
@@ -63,14 +68,14 @@ router.post('/accept', async (req, res) => {
     }
 });
 
-// Start the ride
+// Start the job
 router.post('/start', async (req, res) => {
     try {
         const { rideId, driverId } = req.body;
 
         const ride = await Ride.findOne({ rideId, driverId });
         if (!ride) {
-            return res.status(404).json({ success: false, error: 'Ride not found or unauthorized' });
+            return res.status(404).json({ success: false, error: 'Job not found or unauthorized' });
         }
 
         ride.status = 'STARTED';
@@ -85,14 +90,14 @@ router.post('/start', async (req, res) => {
     }
 });
 
-// Complete the ride
+// Complete the job
 router.post('/complete', async (req, res) => {
     try {
         const { rideId, driverId } = req.body;
 
         const ride = await Ride.findOne({ rideId, driverId });
         if (!ride) {
-            return res.status(404).json({ success: false, error: 'Ride not found or unauthorized' });
+            return res.status(404).json({ success: false, error: 'Job not found or unauthorized' });
         }
 
         ride.status = 'COMPLETED';
@@ -103,6 +108,27 @@ router.post('/complete', async (req, res) => {
 
         res.json({ success: true, data: ride });
     } catch (error) {
+        res.status(500).json({ success: false, error: 'Server error' });
+    }
+});
+
+// Get job history
+router.get('/history/:userId', async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const { role } = req.query;
+
+        let query = { status: 'COMPLETED' };
+        if (role === 'driver') {
+            query.driverId = userId;
+        } else {
+            query.customerId = userId;
+        }
+
+        const history = await Ride.find(query).sort({ createdAt: -1 });
+        res.json({ success: true, data: history });
+    } catch (error) {
+        console.error('History fetch error:', error);
         res.status(500).json({ success: false, error: 'Server error' });
     }
 });

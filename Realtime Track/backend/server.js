@@ -13,8 +13,16 @@ const cors = require('cors');
 const mongoose = require('mongoose');
 
 // Import routes and socket handlers
+const { initializeFirebase } = require('./config/firebase');
+initializeFirebase();
+
 const locationRoutes = require('./routes/location');
 const rideRoutes = require('./routes/ride');
+const authRoutes = require('./routes/auth');
+const paymentRoutes = require('./routes/payment');
+const technicianRoutes = require('./routes/technician');
+const walletRoutes = require('./routes/wallet');
+const commissionRoutes = require('./routes/commission');
 const initializeLocationSocket = require('./sockets/locationSocket');
 
 // Initialize Express app
@@ -70,6 +78,11 @@ app.get('/health', (req, res) => {
 // API Routes
 app.use('/api', locationRoutes);
 app.use('/api/ride', rideRoutes);
+app.use('/api/auth', authRoutes);
+app.use('/api/payment', paymentRoutes);
+app.use('/api/technician', technicianRoutes);
+app.use('/api/wallet', walletRoutes);
+app.use('/api/commission', commissionRoutes);
 
 // Initialize Socket.IO handlers
 initializeLocationSocket(io);

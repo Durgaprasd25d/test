@@ -1,0 +1,70 @@
+// Simple role selector component to add to AuthScreen
+// Insert this after the Name input in the signup section (around line 176-185)
+
+{/* Role Selector - Only show during signup */}
+{isRegistering && (
+    <View style={{ marginTop: 16, marginBottom: 8 }}>
+        <Text style={{ fontSize: 14, fontWeight: '600', color: '#333', marginBottom: 12 }}>
+            Select Role
+        </Text>
+        <View style={{ flexDirection: 'row', gap: 12 }}>
+            <TouchableOpacity
+                style={{
+                    flex: 1,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 8,
+                    padding: 16,
+                    borderRadius: 12,
+                    borderWidth: 2,
+                    borderColor: role === 'customer' ? '#8D5159' : '#E0E0E0',
+                    backgroundColor: role === 'customer' ? '#8D5159' : '#FFFFFF',
+                }}
+                onPress={() => setRole('customer')}
+            >
+                <Ionicons 
+                    name="people-outline" 
+                    size={24} 
+                    color={role === 'customer' ? '#FFFFFF' : '#8D5159'} 
+                />
+                <Text style={{
+                    fontSize: 15,
+                    fontWeight: '600',
+                    color: role === 'customer' ? '#FFFFFF' : '#8D5159',
+                }}>
+                    Customer
+                </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+                style={{
+                    flex: 1,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 8,
+                    padding: 16,
+                    borderRadius: 12,
+                    borderWidth: 2,
+                    borderColor: role === 'technician' ? '#8D5159' : '#E0E0E0',
+                    backgroundColor: role === 'technician' ? '#8D5159' : '#FFFFFF',
+                }}
+                onPress={() => setRole('technician')}
+            >
+                <Ionicons 
+                    name="construct-outline" 
+                    size={24} 
+                    color={role === 'technician' ? '#FFFFFF' : '#8D5159'} 
+                />
+                <Text style={{
+                    fontSize: 15,
+                    fontWeight: '600',
+                    color: role === 'technician' ? '#FFFFFF' : '#8D5159',
+                }}>
+                    Technician
+                </Text>
+            </TouchableOpacity>
+        </View>
+    </View>
+)}

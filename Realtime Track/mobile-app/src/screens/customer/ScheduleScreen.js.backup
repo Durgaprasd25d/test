@@ -1,0 +1,134 @@
+import React, { useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
+import { GooglePlacesAutocomplete } from 'react-native-google-places-autocomplete';
+import { COLORS, SPACING, SHADOWS } from '../../constants/theme';
+import config from '../../constants/config';
+
+const { width } = Dimensions.get('window');
+
+const DATES = [
+    { day: 'Mon', date: '25' },
+    { day: 'Tue', date: '26' },
+    { day: 'Wed', date: '27' },
+    { day: 'Thu', date: '28' },
+    { day: 'Fri', date: '29' },
+];
+
+const TIMES = ['09:00 AM', '11:00 AM', '02:00 PM', '04:00 PM', '06:00 PM'];
+
+export default function ScheduleScreen({ route, navigation }) {
+    const { service } = route.params;
+    const [selectedDate, setSelectedDate] = useState('25');
+    const [selectedTime, setSelectedTime] = useState('02:00 PM');
+    const [address, setAddress] = useState(null);
+
+    return (
+        <SafeAreaView style={styles.container}>
+            <View style={styles.header}>
+                <TouchableOpacity onPress={() => navigation.goBack()}>
+                    <Ionicons name="arrow-back" size={24} color={COLORS.black} />
+                </TouchableOpacity>
+                <Text style={styles.title}>SCHEDULE SERVICE</Text>
+                <View style={{ width: 24 }} />
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+                <Text style={styles.sectionTitle}>Select Date</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.dateList}>
+                    {DATES.map((item) => (
+                        <TouchableOpacity
+                            key={item.date}
+                            style={[styles.dateCard, selectedDate === item.date && styles.activeDateCard]}
+                            onPress={() => setSelectedDate(item.date)}
+                        >
+                            <Text style={[styles.dateDay, selectedDate === item.date && styles.activeDateText]}>{item.day}</Text>
+                            <Text style={[styles.dateNumber, selectedDate === item.date && styles.activeDateText]}>{item.date}</Text>
+                        </TouchableOpacity>
+                    ))}
+                </ScrollView>
+
+                <Text style={styles.sectionTitle}>Select Time</Text>
+                <View style={styles.timeGrid}>
+                    {TIMES.map((time) => (
+                        <TouchableOpacity
+                            key={time}
+                            style={[styles.timeCard, selectedTime === time && styles.activeTimeCard]}
+                            onPress={() => setSelectedTime(time)}
+                        >
+                            <Text style={[styles.timeText, selectedTime === time && styles.activeTimeText]}>{time}</Text>
+                        </TouchableOpacity>
+                    ))}
+                </View>
+
+                <Text style={styles.sectionTitle}>Service Location</Text>
+                <View style={styles.addressBox}>
+                    <GooglePlacesAutocomplete
+                        placeholder='Search for area, street...'
+                        onPress={(data, details = null) => {
+                            setAddress({
+                                description: data.description,
+                                location: details?.geometry?.location
+                            });
+                        }}
+                        query={{
+                            key: config.GOOGLE_MAPS_API_KEY,
+                            language: 'en',
+                        }}
+                        styles={{
+                            textInput: styles.searchInput,
+                            container: { flex: 0 },
+                        }}
+                        fetchDetails={true}
+                        enablePoweredByContainer={false}
+                    />
+                </View>
+
+                <View style={styles.locationSummary}>
+                    <Ionicons name="location" size={20} color={COLORS.roseGold} />
+                    <Text style={styles.selectedAddress} numberOfLines={2}>
+                        {address?.description || 'Pick a location above...'}
+                    </Text>
+                </View>
+            </ScrollView>
+
+            <View style={styles.footer}>
+                <TouchableOpacity
+                    style={[styles.confirmBtn, !address && styles.disabledBtn]}
+                    onPress={() => navigation.navigate('BookingSummary', { service, date: selectedDate, time: selectedTime, address })}
+                    disabled={!address}
+                >
+                    <Text style={styles.confirmBtnText}>Confirm Schedule</Text>
+                </TouchableOpacity>
+            </View>
+        </SafeAreaView>
+    );
+}
+
+const styles = StyleSheet.create({
+    container: { flex: 1, backgroundColor: COLORS.white },
+    header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: SPACING.lg, borderBottomWidth: 1, borderBottomColor: COLORS.greyLight },
+    title: { fontSize: 16, fontWeight: 'bold', color: COLORS.black, letterSpacing: 1 },
+    scrollContent: { padding: SPACING.xl },
+    sectionTitle: { fontSize: 18, fontWeight: 'bold', color: COLORS.black, marginBottom: SPACING.md, marginTop: SPACING.lg },
+    dateList: { flexDirection: 'row', marginBottom: SPACING.sm },
+    dateCard: { width: 70, height: 90, backgroundColor: COLORS.greyLight, borderRadius: 20, justifyContent: 'center', alignItems: 'center', marginRight: SPACING.md },
+    activeDateCard: { backgroundColor: COLORS.roseGold, ...SHADOWS.medium },
+    dateDay: { fontSize: 13, color: COLORS.grey, fontWeight: '500' },
+    dateNumber: { fontSize: 20, color: COLORS.black, fontWeight: 'bold', marginTop: 4 },
+    activeDateText: { color: COLORS.white },
+    timeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
+    timeCard: { paddingHorizontal: 16, paddingVertical: 12, backgroundColor: COLORS.greyLight, borderRadius: 12, borderWidth: 1, borderColor: 'transparent' },
+    activeTimeCard: { backgroundColor: COLORS.primaryBg, borderColor: COLORS.roseGold },
+    timeText: { fontSize: 14, color: COLORS.black, fontWeight: '500' },
+    activeTimeText: { color: COLORS.roseGold, fontWeight: 'bold' },
+    addressBox: { marginTop: SPACING.sm, zIndex: 1000 },
+    searchInput: { backgroundColor: COLORS.greyLight, height: 50, borderRadius: 15, paddingHorizontal: 15, fontSize: 15 },
+    locationSummary: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.primaryBg, padding: SPACING.md, borderRadius: 15, marginTop: SPACING.xl, gap: 10 },
+    selectedAddress: { flex: 1, fontSize: 14, color: COLORS.black, opacity: 0.8 },
+    footer: { padding: SPACING.xl, borderTopWidth: 1, borderTopColor: COLORS.greyLight },
+    confirmBtn: { backgroundColor: COLORS.roseGold, height: 56, borderRadius: 16, justifyContent: 'center', alignItems: 'center', ...SHADOWS.medium },
+    disabledBtn: { backgroundColor: COLORS.greyMedium, elevation: 0 },
+    confirmBtnText: { color: COLORS.white, fontSize: 16, fontWeight: 'bold' },
+});
