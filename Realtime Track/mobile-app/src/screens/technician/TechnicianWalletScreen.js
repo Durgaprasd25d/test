@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, SPACING, SHADOWS } from '../../constants/theme';
@@ -14,7 +14,7 @@ const MOCK_TRANSACTIONS = [
 
 export default function TechnicianWalletScreen({ navigation }) {
     const [balance, setBalance] = useState(0);
-    const [pendingCommission, setPendingCommission] = useState(0);
+    const [commissionDue, setCommissionDue] = useState(0);
     const [transactions, setTransactions] = useState([]);
     const [loading, setLoading] = useState(true);
 
@@ -26,7 +26,7 @@ export default function TechnicianWalletScreen({ navigation }) {
         const result = await technicianService.getWallet();
         if (result.success) {
             setBalance(result.balance);
-            setPendingCommission(result.pendingCommission);
+            setCommissionDue(result.commissionDue);
             setTransactions(result.transactions || MOCK_TRANSACTIONS);
         }
         setLoading(false);
@@ -51,26 +51,37 @@ export default function TechnicianWalletScreen({ navigation }) {
                         <Ionicons name="add" size={20} color={COLORS.white} />
                         <Text style={styles.actionText}>Add</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity style={styles.actionBtn}>
+                    <TouchableOpacity
+                        style={[styles.actionBtn, commissionDue > 0 && styles.disabledBtn]}
+                        onPress={() => {
+                            if (commissionDue > 0) {
+                                Alert.alert('Dues Pending', 'Please clear company commission dues before withdrawing.');
+                            } else {
+                                // navigation.navigate('Withdrawal');
+                            }
+                        }}
+                    >
                         <Ionicons name="arrow-down" size={20} color={COLORS.white} />
                         <Text style={styles.actionText}>Withdraw</Text>
                     </TouchableOpacity>
                 </View>
             </View>
 
-            {/* Pending Commission Warning */}
-            {pendingCommission > 0 && (
+            {/* Company Commission Dues */}
+            {commissionDue > 0 && (
                 <View style={styles.warningCard}>
-                    <Ionicons name="alert-circle" size={24} color={COLORS.warningAmber} />
+                    <Ionicons name="alert-circle" size={24} color={COLORS.error} />
                     <View style={{ flex: 1 }}>
-                        <Text style={styles.warningTitle}>Pending Commission</Text>
-                        <Text style={styles.warningAmount}>₹{pendingCommission}</Text>
+                        <Text style={styles.warningTitle}>Company Commission Dues</Text>
+                        <Text style={[styles.warningAmount, { color: COLORS.error }]}>₹{commissionDue}</Text>
                     </View>
                     <TouchableOpacity
-                        style={styles.payNowBtn}
-                        onPress={() => navigation.navigate('CommissionPayment', { pending: pendingCommission })}
+                        style={[styles.payNowBtn, { backgroundColor: COLORS.error }]}
+                        onPress={() => {
+                            navigation.navigate('PayCommission', { amount: commissionDue })
+                        }}
                     >
-                        <Text style={styles.payNowText}>Pay Now</Text>
+                        <Text style={styles.payNowText}>Pay Dues</Text>
                     </TouchableOpacity>
                 </View>
             )}
@@ -82,24 +93,51 @@ export default function TechnicianWalletScreen({ navigation }) {
         </>
     );
 
-    const renderTransaction = ({ item }) => (
-        <View style={styles.transItem}>
-            <View style={[styles.transIcon, item.type === 'credit' ? styles.creditIcon : styles.debitIcon]}>
-                <Ionicons
-                    name={item.type === 'credit' ? 'arrow-down' : 'arrow-up'}
-                    size={20}
-                    color={item.type === 'credit' ? COLORS.earningsGreen : COLORS.error}
-                />
+    const renderTransaction = ({ item }) => {
+        const isSettlement = item.type === 'settlement';
+        const isCredit = item.type === 'credit';
+        const isDebit = item.type === 'debit';
+
+        let iconName = 'arrow-down';
+        let iconColor = COLORS.earningsGreen;
+        let iconBg = '#E8F5E9';
+        let amountPrefix = '+';
+        let amountColor = COLORS.earningsGreen;
+
+        if (isDebit) {
+            iconName = 'arrow-up';
+            iconColor = COLORS.error;
+            iconBg = '#FFEBEE';
+            amountPrefix = '-';
+            amountColor = COLORS.error;
+        } else if (isSettlement) {
+            iconName = 'shield-checkmark';
+            iconColor = COLORS.technicianPrimary;
+            iconBg = COLORS.technicianLight;
+            amountPrefix = '-'; // Settlement is paying out dues
+            amountColor = COLORS.technicianPrimary;
+        }
+
+        return (
+            <View style={styles.transItem}>
+                <View style={[styles.transIcon, { backgroundColor: iconBg }]}>
+                    <Ionicons name={iconName} size={20} color={iconColor} />
+                </View>
+                <View style={styles.transInfo}>
+                    <Text style={styles.transDesc}>{item.description}</Text>
+                    <Text style={styles.transDate}>
+                        {item.date} • {item.paymentMethod || (isCredit ? 'Wallet' : 'Cash')}
+                    </Text>
+                </View>
+                <View style={{ alignItems: 'flex-end' }}>
+                    <Text style={[styles.transAmount, { color: amountColor }]}>
+                        {amountPrefix}₹{item.amount}
+                    </Text>
+                    <Text style={styles.transStatus}>{item.status}</Text>
+                </View>
             </View>
-            <View style={styles.transInfo}>
-                <Text style={styles.transDesc}>{item.description}</Text>
-                <Text style={styles.transDate}>{item.date} • {item.status}</Text>
-            </View>
-            <Text style={[styles.transAmount, item.type === 'credit' ? styles.creditAmount : styles.debitAmount]}>
-                {item.type === 'credit' ? '+' : '-'}₹{item.amount}
-            </Text>
-        </View>
-    );
+        );
+    };
 
     return (
         <SafeAreaView style={styles.container}>
@@ -189,4 +227,8 @@ const styles = StyleSheet.create({
     transAmount: { fontSize: 16, fontWeight: 'bold' },
     creditAmount: { color: COLORS.earningsGreen },
     debitAmount: { color: COLORS.error },
+    transStatus: { fontSize: 10, color: COLORS.grey, marginTop: 2, textTransform: 'uppercase' },
+    disabledBtn: {
+        opacity: 0.5,
+    },
 });

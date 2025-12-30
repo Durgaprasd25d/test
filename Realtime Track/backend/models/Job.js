@@ -76,6 +76,11 @@ const jobSchema = new mongoose.Schema({
         enum: ['pending', 'collected', 'verified'],
         default: 'pending'
     },
+    paymentMethod: {
+        type: String,
+        enum: ['COD', 'ONLINE'],
+        default: 'COD'
+    },
     customerPhone: String,
     distance: String,
     duration: String,

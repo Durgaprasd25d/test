@@ -37,7 +37,12 @@ router.get('/dashboard', async (req, res) => {
                     status: activeJob.status,
                     earnings: activeJob.pricing.technicianEarnings
                 } : null,
-                isOnline: technician.isOnline
+                isOnline: technician.isOnline,
+                wallet: {
+                    balance: technician.wallet.balance,
+                    commissionDue: technician.wallet.commissionDue,
+                    codLimit: technician.wallet.codLimit
+                }
             }
         });
     } catch (error) {
@@ -135,6 +140,17 @@ router.post('/jobs/accept', async (req, res) => {
             return res.status(400).json({ error: 'Job already accepted' });
         }
 
+        const technician = await Technician.getOrCreate(technicianId);
+
+        // Uber-style Enforcement: Check if COD is blocked
+        if (job.paymentMethod === 'COD' && technician.wallet.commissionDue >= technician.wallet.codLimit) {
+            return res.status(403).json({
+                success: false,
+                error: 'COD_LIMIT_EXCEEDED',
+                message: 'Please clear pending company dues to accept cash jobs.'
+            });
+        }
+
         job.technician = technicianId;
         job.status = 'accepted';
         job.timeline.acceptedAt = new Date();
@@ -217,37 +233,55 @@ router.post('/jobs/:jobId/verify-otp', async (req, res) => {
         // Update technician wallet and stats
         const technician = await Technician.findOne({ userId: job.technician });
         if (technician) {
-            // Add earnings to wallet
-            technician.wallet.balance += job.pricing.technicianEarnings;
+            const earnings = job.pricing.technicianEarnings;
+            const commission = job.pricing.commission;
 
-            // Add commission to pending
-            technician.wallet.pendingCommission += job.pricing.commission;
+            if (job.paymentMethod === 'COD') {
+                // Technician received full cash: ₹1000
+                // We ONLY credit their share (₹800) to balance
+                // And add ₹200 to commissionDue (what they owe us)
+                technician.wallet.balance += earnings;
+                technician.wallet.commissionDue += commission;
+            } else {
+                // ONLINE PAYMENT: Auto-recovery logic
+                // If technician owes money, use these earnings to clear dues first
+                if (technician.wallet.commissionDue > 0) {
+                    const recoverableAmount = Math.min(technician.wallet.commissionDue, earnings);
+                    technician.wallet.commissionDue -= recoverableAmount;
+                    const remainingEarnings = earnings - recoverableAmount;
+                    technician.wallet.balance += remainingEarnings;
+
+                    console.log(`🏦 Auto-recovery: Recovered ₹${recoverableAmount} from ₹${earnings} online earnings.`);
+                } else {
+                    technician.wallet.balance += earnings;
+                }
+            }
 
             // Update stats
-            technician.stats.todayEarnings += job.pricing.technicianEarnings;
+            technician.stats.todayEarnings += earnings;
             technician.stats.completedJobs += 1;
             technician.stats.totalJobs += 1;
 
             await technician.save();
 
-            // Create credit transaction
+            // Create credit transaction for earnings
             await Transaction.create({
                 technician: job.technician,
                 type: 'credit',
-                amount: job.pricing.technicianEarnings,
-                description: `Job #${job._id.toString().substring(0, 8)} earnings`,
+                amount: earnings,
+                description: `Job #${job._id.toString().substring(0, 8)} (${job.paymentMethod})`,
                 job: job._id,
                 status: 'completed'
             });
 
-            // Create pending commission transaction
+            // Create debit transaction recording the commission tracking
             await Transaction.create({
                 technician: job.technician,
                 type: 'debit',
-                amount: job.pricing.commission,
-                description: `Commission Pending #${job._id.toString().substring(0, 8)}`,
+                amount: commission,
+                description: `Company Commission #${job._id.toString().substring(0, 8)}`,
                 job: job._id,
-                status: 'pending'
+                status: job.paymentMethod === 'COD' ? 'pending' : 'settled'
             });
         }
 

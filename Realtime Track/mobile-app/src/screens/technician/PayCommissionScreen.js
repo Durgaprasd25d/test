@@ -17,17 +17,37 @@ export default function PayCommissionScreen({ route, navigation }) {
     const [processing, setProcessing] = useState(false);
 
     const handlePayment = async () => {
-        setProcessing(true);
-        const result = await technicianService.payCommission(amount, selectedMethod);
-
-        if (result.success) {
-            navigation.navigate('CommissionPaid', {
-                amount,
-                balance: result.balance
-            });
+        if (selectedMethod === 'razorpay') {
+            setProcessing(true);
+            try {
+                const orderResult = await technicianService.createSettlementOrder(amount);
+                if (orderResult.success) {
+                    navigation.navigate('RazorpayCheckout', {
+                        order: orderResult.order,
+                        amount: amount
+                    });
+                } else {
+                    Alert.alert('Payment Error', orderResult.error || 'Failed to create payment order');
+                }
+            } catch (error) {
+                Alert.alert('Error', 'Something went wrong');
+            } finally {
+                setProcessing(false);
+            }
         } else {
-            Alert.alert('Error', result.error || 'Payment failed');
-            setProcessing(false);
+            // Original logic for mock/manual payments
+            setProcessing(true);
+            const result = await technicianService.payCommission(amount, selectedMethod);
+
+            if (result.success) {
+                navigation.navigate('CommissionPaid', {
+                    amount,
+                    balance: result.balance
+                });
+            } else {
+                Alert.alert('Error', result.error || 'Payment failed');
+                setProcessing(false);
+            }
         }
     };
 

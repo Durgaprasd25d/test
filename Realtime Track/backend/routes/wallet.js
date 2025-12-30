@@ -21,17 +21,19 @@ router.get('/', async (req, res) => {
 
         const formattedTransactions = transactions.map(t => ({
             id: t._id,
-            type: t.type,
+            type: t.type, // 'credit', 'debit', or 'settlement'
             amount: t.amount,
             description: t.description,
             date: t.createdAt.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }),
-            status: t.status
+            status: t.status,
+            paymentMethod: t.metadata?.paymentMethod || 'Razorpay'
         }));
 
         res.json({
             success: true,
             balance: technician.wallet.balance,
-            pendingCommission: technician.wallet.pendingCommission,
+            commissionDue: technician.wallet.commissionDue,
+            codLimit: technician.wallet.codLimit,
             transactions: formattedTransactions
         });
     } catch (error) {
@@ -103,6 +105,14 @@ router.post('/withdraw', async (req, res) => {
         const technician = await Technician.findOne({ userId });
         if (!technician) {
             return res.status(404).json({ error: 'Technician not found' });
+        }
+
+        if (technician.wallet.commissionDue > 0) {
+            return res.status(400).json({
+                success: false,
+                error: 'DUES_PENDING',
+                message: 'Please clear pending company dues before withdrawing.'
+            });
         }
 
         if (technician.wallet.balance < amount) {

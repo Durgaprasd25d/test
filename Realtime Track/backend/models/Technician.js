@@ -40,9 +40,13 @@ const technicianSchema = new mongoose.Schema({
             type: Number,
             default: 0
         },
-        pendingCommission: {
+        commissionDue: {
             type: Number,
             default: 0
+        },
+        codLimit: {
+            type: Number,
+            default: 500
         }
     },
     documents: {

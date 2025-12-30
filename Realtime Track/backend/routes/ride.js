@@ -28,7 +28,8 @@ router.post('/request', async (req, res) => {
             rideId,
             pickup,
             destination,
-            serviceType: ride.serviceType
+            serviceType: ride.serviceType,
+            paymentMethod: ride.paymentMethod
         });
 
         res.json({ success: true, data: ride });
@@ -97,6 +98,17 @@ router.post('/accept', async (req, res) => {
             return res.status(404).json({ success: false, error: 'Job no longer available' });
         }
 
+        const technician = await Technician.getOrCreate(driverId);
+
+        // Uber-style Enforcement: Check if COD is blocked
+        if (ride.paymentMethod === 'COD' && technician.wallet.commissionDue >= technician.wallet.codLimit) {
+            return res.status(403).json({
+                success: false,
+                error: 'COD_LIMIT_EXCEEDED',
+                message: 'Please clear pending company dues to accept cash jobs.'
+            });
+        }
+
         // Generate 4-digit Entrance OTP
         const arrivalOtp = Math.floor(1000 + Math.random() * 9000).toString();
 
@@ -108,8 +120,7 @@ router.post('/accept', async (req, res) => {
         // Use population to get technician user details
         const populatedRide = await Ride.findOne({ rideId }).populate('driverId');
 
-        // Fetch technician-specific profile info
-        const technician = await Technician.findOne({ userId: driverId });
+        // Fetch technician-specific profile info (already fetched on line 100)
 
         const technicianData = {
             id: driverId,
@@ -267,6 +278,39 @@ router.post('/complete', async (req, res) => {
         ride.status = 'COMPLETED';
         ride.paymentStatus = 'VERIFIED';
         await ride.save();
+
+        // Updated Uber-style Financial Logic for Ride Completion
+        const technician = await Technician.findOne({ userId: ride.driverId });
+        if (technician) {
+            const price = ride.price || 1000; // Fallback to 1000 if not set
+            const COMMISSION_RATE = 0.20;
+            const commission = Math.round(price * COMMISSION_RATE);
+            const earnings = price - commission;
+
+            if (ride.paymentMethod === 'COD') {
+                // Technician keeps the cash, so we mark it as owed
+                technician.wallet.balance += earnings;
+                technician.wallet.commissionDue += commission;
+                console.log(`💰 COD Completion: Technician earned ₹${earnings}, owes ₹${commission} commission.`);
+            } else {
+                // Online Payment: Auto-recovery logic
+                if (technician.wallet.commissionDue > 0) {
+                    const recoverableAmount = Math.min(technician.wallet.commissionDue, earnings);
+                    technician.wallet.commissionDue -= recoverableAmount;
+                    const remainingEarnings = earnings - recoverableAmount;
+                    technician.wallet.balance += remainingEarnings;
+                    console.log(`🏦 Online Completion: Recovered ₹${recoverableAmount} from dues.`);
+                } else {
+                    technician.wallet.balance += earnings;
+                }
+            }
+
+            // Update stats
+            technician.stats.todayEarnings += earnings;
+            technician.stats.completedJobs += 1;
+            technician.stats.totalJobs += 1;
+            await technician.save();
+        }
 
         const io = req.app.get('io');
         io.to(`ride:${rideId}`).emit('ride:completed', { rideId });

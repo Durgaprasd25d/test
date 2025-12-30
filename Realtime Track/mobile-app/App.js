@@ -35,6 +35,7 @@ import TechnicianHistoryScreen from './src/screens/technician/TechnicianHistoryS
 import TechnicianProfileScreen from './src/screens/technician/TechnicianProfileScreen';
 import TechnicianNavigationScreen from './src/screens/technician/TechnicianNavigationScreen';
 import DriverScreen from './src/screens/technician/DriverScreen'; // Legacy - keep for existing tracking
+import RazorpayCheckoutScreen from './src/screens/technician/RazorpayCheckoutScreen';
 
 import authService from './src/services/authService';
 import { COLORS } from './src/constants/theme';
@@ -255,6 +256,11 @@ export default function App() {
                 <Stack.Screen
                     name="Driver"
                     component={DriverScreen}
+                    options={{ headerShown: false }}
+                />
+                <Stack.Screen
+                    name="RazorpayCheckout"
+                    component={RazorpayCheckoutScreen}
                     options={{ headerShown: false }}
                 />
             </Stack.Navigator>

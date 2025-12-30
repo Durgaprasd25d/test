@@ -8,6 +8,7 @@
 // In Expo SDK 49+, use EXPO_PUBLIC_ prefix for automatic environment variable injection
 const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'http://10.241.66.236:4000';
 const GOOGLE_MAPS_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY || '';
+const RAZORPAY_KEYID = process.env.EXPO_PUBLIC_RAZORPAY_KEYID || 'rzp_test_RxiuviHEGyiaLv';
 
 export default {
     // Backend
@@ -16,6 +17,7 @@ export default {
 
     // Google Maps
     GOOGLE_MAPS_API_KEY,
+    RAZORPAY_KEYID,
 
     // Driver Location Updates
     DRIVER_LOCATION_INTERVAL: 2000, // 2 seconds (Uber-level response)

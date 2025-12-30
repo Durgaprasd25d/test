@@ -1,20 +1,62 @@
 import React, { useEffect } from 'react';
-import { View, Text, StyleSheet, Animated, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, Animated, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, SPACING, SHADOWS } from '../../constants/theme';
+import technicianService from '../../services/technicianService';
 
 export default function CommissionPaidScreen({ route, navigation }) {
-    const { amount } = route?.params || {};
-    const scaleAnim = new Animated.Value(0);
+    const { amount, paymentData } = route?.params || {};
+    const [balance, setBalance] = React.useState(0);
+    const [loading, setLoading] = React.useState(!!paymentData);
+    const scaleAnim = React.useRef(new Animated.Value(0)).current;
 
-    useEffect(() => {
-        Animated.spring(scaleAnim, {
-            toValue: 1,
-            friction: 5,
-            useNativeDriver: true,
-        }).start();
+    React.useEffect(() => {
+        if (paymentData) {
+            verifyPayment();
+        } else {
+            Animated.spring(scaleAnim, {
+                toValue: 1,
+                friction: 5,
+                useNativeDriver: true,
+            }).start();
+        }
     }, []);
+
+    const verifyPayment = async () => {
+        try {
+            const result = await technicianService.verifySettlementPayment({
+                ...paymentData,
+                amount: amount
+            });
+            if (result.success) {
+                setBalance(result.balance);
+                Animated.spring(scaleAnim, {
+                    toValue: 1,
+                    friction: 5,
+                    useNativeDriver: true,
+                }).start();
+            } else {
+                // Handle error
+                console.error('Verification failed:', result.error);
+            }
+        } catch (error) {
+            console.error('Verify error:', error);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    if (loading) {
+        return (
+            <SafeAreaView style={styles.container}>
+                <View style={styles.content}>
+                    <ActivityIndicator size="large" color={COLORS.technicianPrimary} />
+                    <Text style={[styles.subtitle, { marginTop: 20 }]}>Verifying payment...</Text>
+                </View>
+            </SafeAreaView>
+        );
+    }
 
     return (
         <SafeAreaView style={styles.container}>
@@ -24,23 +66,23 @@ export default function CommissionPaidScreen({ route, navigation }) {
                 </Animated.View>
 
                 <Text style={styles.title}>Commission Paid Successfully!</Text>
-                <Text style={styles.subtitle}>Payment confirmed</Text>
+                <Text style={styles.subtitle}>Payment confirmed via Razorpay</Text>
 
                 <View style={styles.detailsCard}>
                     <View style={styles.detailRow}>
                         <Text style={styles.detailLabel}>Amount Paid</Text>
-                        <Text style={styles.detailValue}>₹{amount || 480}</Text>
+                        <Text style={styles.detailValue}>₹{amount}</Text>
                     </View>
                     <View style={styles.divider} />
                     <View style={styles.detailRow}>
-                        <Text style={styles.detailLabel}>Updated Balance</Text>
-                        <Text style={[styles.detailValue, { color: COLORS.earningsGreen }]}>₹2,160</Text>
+                        <Text style={styles.detailLabel}>Updated Wallet Balance</Text>
+                        <Text style={[styles.detailValue, { color: COLORS.earningsGreen }]}>₹{balance.toLocaleString()}</Text>
                     </View>
                 </View>
 
                 <View style={styles.successNote}>
                     <Ionicons name="checkmark-done-circle" size={20} color={COLORS.earningsGreen} />
-                    <Text style={styles.noteText}>Your commission has been cleared. Continue accepting jobs!</Text>
+                    <Text style={styles.noteText}>Your dues have been cleared. COD jobs are now enabled!</Text>
                 </View>
             </View>
 

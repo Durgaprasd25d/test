@@ -31,7 +31,7 @@ router.get('/pending', async (req, res) => {
 
         res.json({
             success: true,
-            total: technician.wallet.pendingCommission,
+            total: technician.wallet.commissionDue,
             jobs
         });
     } catch (error) {
@@ -50,12 +50,12 @@ router.post('/pay', async (req, res) => {
             return res.status(404).json({ error: 'Technician not found' });
         }
 
-        if (technician.wallet.pendingCommission < amount) {
+        if (technician.wallet.commissionDue < amount) {
             return res.status(400).json({ error: 'Invalid commission amount' });
         }
 
         // Deduct pending commission
-        technician.wallet.pendingCommission -= amount;
+        technician.wallet.commissionDue -= amount;
         await technician.save();
 
         // Mark pending transactions as completed
@@ -75,7 +75,7 @@ router.post('/pay', async (req, res) => {
 
         res.json({
             success: true,
-            remainingCommission: technician.wallet.pendingCommission,
+            remainingCommission: technician.wallet.commissionDue,
             balance: technician.wallet.balance
         });
     } catch (error) {

@@ -26,6 +26,7 @@ export default function TechnicianDashboardScreen({ navigation }) {
     const [socketConnected, setSocketConnected] = useState(false);
     const [showJobModal, setShowJobModal] = useState(false);
     const [pendingJob, setPendingJob] = useState(null);
+    const [wallet, setWallet] = useState({ balance: 0, commissionDue: 0, codLimit: 500 });
 
     useEffect(() => {
         loadUser();
@@ -53,6 +54,13 @@ export default function TechnicianDashboardScreen({ navigation }) {
 
     const handleJobRequest = (jobData) => {
         console.log('📋 New job request:', jobData);
+
+        // Uber-style filtering: Don't show COD jobs if over limit
+        if (jobData.paymentMethod === 'COD' && wallet.commissionDue >= wallet.codLimit) {
+            console.log('🛑 COD job filtered out due to high dues (₹' + wallet.commissionDue + ')');
+            return;
+        }
+
         setPendingJob(jobData);
         setShowJobModal(true);
     };
@@ -124,6 +132,9 @@ export default function TechnicianDashboardScreen({ navigation }) {
                 setCompletedJobs(result.data.completedJobs);
                 setActiveJob(result.data.activeJob);
                 setIsOnline(result.data.isOnline);
+                if (result.data.wallet) {
+                    setWallet(result.data.wallet);
+                }
             }
         } catch (error) {
             console.error('Dashboard load error:', error);
@@ -160,6 +171,24 @@ export default function TechnicianDashboardScreen({ navigation }) {
             </View>
 
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+                {/* COD Limit Warning */}
+                {wallet.commissionDue >= wallet.codLimit && (
+                    <View style={styles.warningBanner}>
+                        <Ionicons name="warning" size={20} color={COLORS.white} />
+                        <Text style={styles.warningText}>
+                            COD Jobs Disabled! Clear ₹{wallet.commissionDue} dues to resume.
+                        </Text>
+                    </View>
+                )}
+
+                {wallet.commissionDue > 0 && wallet.commissionDue < wallet.codLimit && (
+                    <View style={[styles.warningBanner, { backgroundColor: COLORS.warning }]}>
+                        <Ionicons name="information-circle" size={20} color={COLORS.white} />
+                        <Text style={styles.warningText}>
+                            ₹{wallet.commissionDue} pending commission. Limit: ₹{wallet.codLimit}
+                        </Text>
+                    </View>
+                )}
                 {/* Earnings Card */}
                 <View style={styles.earningsCard}>
                     <View style={styles.earningsHeader}>
@@ -314,4 +343,19 @@ const styles = StyleSheet.create({
         marginTop: SPACING.lg,
     },
     logoutText: { fontSize: 14, fontWeight: '600', color: COLORS.error },
+    warningBanner: {
+        backgroundColor: COLORS.error,
+        flexDirection: 'row',
+        alignItems: 'center',
+        padding: SPACING.md,
+        borderRadius: 15,
+        marginBottom: SPACING.lg,
+        gap: 10,
+    },
+    warningText: {
+        color: COLORS.white,
+        fontSize: 13,
+        fontWeight: '600',
+        flex: 1,
+    },
 });

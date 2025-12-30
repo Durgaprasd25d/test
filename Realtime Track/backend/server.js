@@ -24,6 +24,7 @@ const technicianRoutes = require('./routes/technician');
 const walletRoutes = require('./routes/wallet');
 const commissionRoutes = require('./routes/commission');
 const serviceRoutes = require('./routes/serviceRoutes');
+const settlementRoutes = require('./routes/settlement');
 const initializeLocationSocket = require('./sockets/locationSocket');
 const seedDatabase = require('./utils/seeder');
 
@@ -71,6 +72,7 @@ app.use('/api/technician', technicianRoutes);
 app.use('/api/wallet', walletRoutes);
 app.use('/api/commission', commissionRoutes);
 app.use('/api/services', serviceRoutes);
+app.use('/api/settlement', settlementRoutes);
 
 // Initialize Socket.IO handlers
 initializeLocationSocket(io);

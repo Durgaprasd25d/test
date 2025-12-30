@@ -210,6 +210,34 @@ export const payCommission = async (amount, paymentMethod) => {
     }
 };
 
+export const createSettlementOrder = async (amount) => {
+    try {
+        const userId = await getUserId();
+        const response = await axios.post(`${API_URL}/api/settlement/create-order`, {
+            userId,
+            amount
+        });
+        return response.data;
+    } catch (error) {
+        console.error('Create order error:', error);
+        return { success: false, error: error.message };
+    }
+};
+
+export const verifySettlementPayment = async (paymentData) => {
+    try {
+        const userId = await getUserId();
+        const response = await axios.post(`${API_URL}/api/settlement/verify-payment`, {
+            userId,
+            ...paymentData
+        });
+        return response.data;
+    } catch (error) {
+        console.error('Verify payment error:', error);
+        return { success: false, error: error.message };
+    }
+};
+
 export default {
     getTechnicianDashboard,
     updateOnlineStatus,
@@ -223,4 +251,6 @@ export default {
     withdrawMoney,
     getPendingCommission,
     payCommission,
+    createSettlementOrder,
+    verifySettlementPayment,
 };
