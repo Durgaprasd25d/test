@@ -17,6 +17,7 @@ import { StatusBar } from 'expo-status-bar';
 import { COLORS, SPACING, SHADOWS } from '../../constants/theme';
 import config from '../../constants/config';
 import authService from '../../services/authService';
+import Logo from '../../components/Logo';
 
 const { width } = Dimensions.get('window');
 
@@ -55,9 +56,12 @@ export default function HomeScreen({ navigation }) {
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
                 {/* Header Section */}
                 <View style={styles.header}>
-                    <View>
-                        <Text style={styles.welcomeText}>Welcome home,</Text>
-                        <Text style={styles.userName}>{user?.name || 'Guest'}</Text>
+                    <View style={styles.headerLeft}>
+                        <Logo size={40} />
+                        <View style={styles.headerText}>
+                            <Text style={styles.welcomeText}>Welcome home,</Text>
+                            <Text style={styles.userName}>{user?.name || 'Guest'}</Text>
+                        </View>
                     </View>
                     <TouchableOpacity style={styles.profileBtn} onPress={() => navigation.navigate('History')}>
                         <Ionicons name="person-circle-outline" size={40} color={COLORS.roseGold} />
@@ -147,8 +151,10 @@ const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: COLORS.white },
     scrollContent: { padding: SPACING.lg, paddingBottom: 100 },
     header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: SPACING.xl },
-    welcomeText: { fontSize: 14, color: COLORS.grey, fontWeight: '500' },
-    userName: { fontSize: 24, fontWeight: 'bold', color: COLORS.black },
+    headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+    headerText: { justifyContent: 'center' },
+    welcomeText: { fontSize: 13, color: COLORS.grey, fontWeight: '500' },
+    userName: { fontSize: 20, fontWeight: 'bold', color: COLORS.black },
     profileBtn: { ...SHADOWS.light },
     searchContainer: {
         flexDirection: 'row',

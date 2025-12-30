@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions } from
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, SPACING, SHADOWS } from '../../constants/theme';
+import Logo from '../../components/Logo';
 
 const { width } = Dimensions.get('window');
 
@@ -13,7 +14,10 @@ export default function WalletScreen({ navigation }) {
                 <TouchableOpacity onPress={() => navigation.goBack()}>
                     <Ionicons name="arrow-back" size={24} color={COLORS.black} />
                 </TouchableOpacity>
-                <Text style={styles.title}>MY WALLET</Text>
+                <View style={styles.titleContainer}>
+                    <Logo size={24} />
+                    <Text style={styles.title}>MY WALLET</Text>
+                </View>
                 <View style={{ width: 24 }} />
             </View>
 
@@ -67,6 +71,7 @@ export default function WalletScreen({ navigation }) {
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: COLORS.white },
     header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: SPACING.lg, borderBottomWidth: 1, borderBottomColor: COLORS.greyLight },
+    titleContainer: { flexDirection: 'row', alignItems: 'center', gap: 8 },
     title: { fontSize: 16, fontWeight: 'bold', color: COLORS.black, letterSpacing: 1 },
     scrollContent: { padding: SPACING.xl },
     card: { backgroundColor: COLORS.roseGold, borderRadius: 30, padding: 30, ...SHADOWS.heavy, marginBottom: SPACING.xxl },

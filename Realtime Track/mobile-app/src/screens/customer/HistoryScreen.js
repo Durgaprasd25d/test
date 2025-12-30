@@ -12,6 +12,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { StatusBar } from 'expo-status-bar';
 import rideService from '../../services/rideService';
 import { COLORS, SPACING, SHADOWS } from '../../constants/theme';
+import Logo from '../../components/Logo';
 
 export default function HistoryScreen({ navigation, route }) {
     const { userId = 'demo_user', role = 'customer' } = route.params || {};
@@ -73,7 +74,10 @@ export default function HistoryScreen({ navigation, route }) {
                 <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
                     <Ionicons name="arrow-back" size={24} color={COLORS.black} />
                 </TouchableOpacity>
-                <Text style={styles.title}>Service History</Text>
+                <View style={styles.titleContainer}>
+                    <Logo size={24} />
+                    <Text style={styles.title}>Service History</Text>
+                </View>
                 <View style={{ width: 40 }} />
             </View>
 
@@ -113,6 +117,7 @@ const styles = StyleSheet.create({
         ...SHADOWS.light,
     },
     backBtn: { padding: SPACING.xs },
+    titleContainer: { flexDirection: 'row', alignItems: 'center', gap: 8 },
     title: { fontSize: 18, fontWeight: 'bold', color: COLORS.black },
     listContent: { padding: SPACING.md },
     historyCard: {

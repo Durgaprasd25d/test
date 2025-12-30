@@ -7,7 +7,7 @@ import { StatusBar } from 'expo-status-bar';
 import { COLORS, SPACING, SHADOWS } from '../../constants/theme';
 import ToggleSwitch from '../../components/ToggleSwitch';
 import JobCard from '../../components/JobCard';
-import JobRequestModal from '../../components/JobRequestModal';
+import JobRequestSheet from '../../components/JobRequestSheet';
 import technicianService from '../../services/technicianService';
 import authService from '../../services/authService';
 import config from '../../constants/config';
@@ -31,13 +31,20 @@ export default function TechnicianDashboardScreen({ navigation }) {
         loadUser();
         loadDashboardData();
 
+        // Refresh data when screen comes into focus
+        const unsubscribe = navigation.addListener('focus', () => {
+            console.log('🔄 Dashboard focused - refreshing data...');
+            loadDashboardData();
+        });
+
         // Connect to socket for job notifications
         technicianSocketService.connect(handleJobRequest, handleSocketConnection);
 
         return () => {
+            unsubscribe();
             technicianSocketService.disconnect();
         };
-    }, []);
+    }, [navigation]);
 
     const handleSocketConnection = (status) => {
         console.log('Socket status:', status);
@@ -235,8 +242,8 @@ export default function TechnicianDashboardScreen({ navigation }) {
                 </TouchableOpacity>
             </ScrollView>
 
-            {/* Job Request Modal */}
-            <JobRequestModal
+            {/* Job Request Bottom Sheet */}
+            <JobRequestSheet
                 visible={showJobModal}
                 jobData={pendingJob}
                 onAccept={handleAcceptJob}

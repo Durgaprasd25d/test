@@ -26,7 +26,7 @@ import { COLORS, SPACING, SHADOWS } from '../../constants/theme';
 
 const { width } = Dimensions.get('window');
 
-export default function CustomerScreen({ route }) {
+export default function CustomerScreen({ route, navigation }) {
     const { rideId } = route?.params || {};
 
     const mapRef = useRef(null);
@@ -205,8 +205,15 @@ export default function CustomerScreen({ route }) {
             });
 
             socket.on('ride:completed', () => {
+                console.log('🏁 Ride COMPLETED event received via socket');
                 setRideStatus('COMPLETED');
                 setStatusMessage('Service Completed!');
+
+                // Real-time: wait 2 seconds so user sees the "Completed" message, then auto-close
+                setTimeout(() => {
+                    console.log('🏠 Auto-navigating back to Home...');
+                    navigation.navigate('Home');
+                }, 2000);
             });
 
             return () => {
