@@ -9,27 +9,25 @@ import {
     Image,
     TextInput,
     Platform,
+    ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { StatusBar } from 'expo-status-bar';
 import { COLORS, SPACING, SHADOWS } from '../../constants/theme';
+import config from '../../constants/config';
 import authService from '../../services/authService';
 
 const { width } = Dimensions.get('window');
 
-const CATEGORIES = [
-    { id: 'repair', name: 'Repair', icon: 'build-outline' },
-    { id: 'service', name: 'Service', icon: 'color-filter-outline' },
-    { id: 'install', name: 'Install', icon: 'settings-outline' },
-    { id: 'emergency', name: 'Emergency', icon: 'flash-outline' },
-];
-
 export default function HomeScreen({ navigation }) {
     const [user, setUser] = useState(null);
+    const [categories, setCategories] = useState([]);
+    const [loading, setLoading] = useState(true);
 
     useEffect(() => {
         loadUser();
+        fetchCategories();
     }, []);
 
     const loadUser = async () => {
@@ -37,6 +35,19 @@ export default function HomeScreen({ navigation }) {
         setUser(userData);
     };
 
+    const fetchCategories = async () => {
+        try {
+            const response = await fetch(`${config.BACKEND_URL}/api/services/categories`);
+            const result = await response.json();
+            if (result.success) {
+                setCategories(result.data);
+            }
+        } catch (error) {
+            console.error('Error fetching categories:', error);
+        } finally {
+            setLoading(false);
+        }
+    };
 
     return (
         <SafeAreaView style={styles.container}>
@@ -56,27 +67,35 @@ export default function HomeScreen({ navigation }) {
                 {/* Search Bar */}
                 <TouchableOpacity style={styles.searchContainer} activeOpacity={0.8}>
                     <Ionicons name="search-outline" size={20} color={COLORS.grey} />
-                    <Text style={styles.searchText}>Explore places...</Text>
+                    <Text style={styles.searchText}>Explore services...</Text>
                 </TouchableOpacity>
 
                 {/* Categories */}
                 <View style={styles.sectionHeader}>
                     <Text style={styles.sectionTitle}>What do you need?</Text>
                 </View>
-                <View style={styles.categoriesGrid}>
-                    {CATEGORIES.map((cat) => (
-                        <TouchableOpacity
-                            key={cat.id}
-                            style={styles.categoryCard}
-                            onPress={() => navigation.navigate('ServiceList', { type: cat.id })}
-                        >
-                            <View style={styles.iconCircle}>
-                                <Ionicons name={cat.icon} size={28} color={COLORS.roseGold} />
-                            </View>
-                            <Text style={styles.categoryName}>{cat.name}</Text>
-                        </TouchableOpacity>
-                    ))}
-                </View>
+
+                {loading ? (
+                    <ActivityIndicator size="large" color={COLORS.roseGold} style={{ marginVertical: 20 }} />
+                ) : (
+                    <View style={styles.categoriesGrid}>
+                        {categories.map((cat) => (
+                            <TouchableOpacity
+                                key={cat._id}
+                                style={styles.categoryCard}
+                                onPress={() => navigation.navigate('ServiceList', {
+                                    type: cat.slug,
+                                    categoryName: cat.name
+                                })}
+                            >
+                                <View style={styles.iconCircle}>
+                                    <Ionicons name={cat.icon} size={28} color={COLORS.roseGold} />
+                                </View>
+                                <Text style={styles.categoryName}>{cat.name}</Text>
+                            </TouchableOpacity>
+                        ))}
+                    </View>
+                )}
 
                 {/* Recent/Favorites */}
                 <View style={styles.sectionHeader}>

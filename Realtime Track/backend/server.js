@@ -23,7 +23,9 @@ const paymentRoutes = require('./routes/payment');
 const technicianRoutes = require('./routes/technician');
 const walletRoutes = require('./routes/wallet');
 const commissionRoutes = require('./routes/commission');
+const serviceRoutes = require('./routes/serviceRoutes');
 const initializeLocationSocket = require('./sockets/locationSocket');
+const seedDatabase = require('./utils/seeder');
 
 // Initialize Express app
 const app = express();
@@ -32,20 +34,23 @@ const server = http.createServer(app);
 // Initialize Socket.IO with CORS
 const io = new Server(server, {
     cors: {
-        origin: '*', // In production, specify your mobile app's origin
+        origin: '*',
         methods: ['GET', 'POST'],
         credentials: true,
     },
-    transports: ['websocket', 'polling'], // Support both for reliability
+    transports: ['websocket', 'polling'],
 });
 
-// Store io in app for access in routes
+// Store io in app
 app.set('io', io);
 
 // MongoDB Connection
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/uber_tracking';
 mongoose.connect(MONGODB_URI)
-    .then(() => console.log('✅ Connected to MongoDB'))
+    .then(async () => {
+        console.log('✅ Connected to MongoDB');
+        await seedDatabase();
+    })
     .catch(err => console.error('❌ MongoDB connection error:', err));
 
 // Configuration
@@ -57,24 +62,6 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Request logging (development)
-if (NODE_ENV === 'development') {
-    app.use((req, res, next) => {
-        console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
-        next();
-    });
-}
-
-// Health check endpoint
-app.get('/health', (req, res) => {
-    res.json({
-        status: 'ok',
-        mongodb: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
-        timestamp: new Date().toISOString(),
-        uptime: process.uptime(),
-    });
-});
-
 // API Routes
 app.use('/api', locationRoutes);
 app.use('/api/ride', rideRoutes);
@@ -83,6 +70,7 @@ app.use('/api/payment', paymentRoutes);
 app.use('/api/technician', technicianRoutes);
 app.use('/api/wallet', walletRoutes);
 app.use('/api/commission', commissionRoutes);
+app.use('/api/services', serviceRoutes);
 
 // Initialize Socket.IO handlers
 initializeLocationSocket(io);

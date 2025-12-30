@@ -1,31 +1,34 @@
 import React from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, Image, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, Image, Dimensions, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, SPACING, SHADOWS } from '../../constants/theme';
+import config from '../../constants/config';
 
 const { width } = Dimensions.get('window');
 
-const SERVICES = {
-    repair: [
-        { id: 'r1', name: 'Gas Leak Fix', price: 1500, time: '2 hrs', image: 'https://images.unsplash.com/photo-1542013936693-884638332154?q=80&w=200&auto=format&fit=crop' },
-        { id: 'r2', name: 'Cooling Issue', price: 800, time: '1 hr', image: 'https://images.unsplash.com/photo-1581094288338-2314dddb7bc3?q=80&w=200&auto=format&fit=crop' },
-    ],
-    service: [
-        { id: 's1', name: 'Deep Cleaning', price: 1200, time: '1.5 hrs', image: 'https://images.unsplash.com/photo-1621905252507-b354bc2addcc?q=80&w=200&auto=format&fit=crop' },
-        { id: 's2', name: 'Standard Checkup', price: 500, time: '30 mins', image: 'https://images.unsplash.com/photo-1590333746438-281fd6f966fd?q=80&w=200&auto=format&fit=crop' },
-    ],
-    install: [
-        { id: 'i1', name: 'Unit Installation', price: 2500, time: '3 hrs', image: 'https://images.unsplash.com/photo-1533158326339-7f3cf2404354?q=80&w=200&auto=format&fit=crop' },
-    ],
-    emergency: [
-        { id: 'e1', name: 'Fast Repair', price: 2000, time: '45 mins', image: 'https://images.unsplash.com/photo-1584036561566-baf8f5f1b144?q=80&w=200&auto=format&fit=crop' },
-    ]
-};
-
 export default function ServiceListScreen({ route, navigation }) {
-    const { type } = route.params;
-    const data = SERVICES[type] || [];
+    const { type, categoryName } = route.params;
+    const [services, setServices] = React.useState([]);
+    const [loading, setLoading] = React.useState(true);
+
+    React.useEffect(() => {
+        fetchServices();
+    }, [type]);
+
+    const fetchServices = async () => {
+        try {
+            const response = await fetch(`${config.BACKEND_URL}/api/services/category/${type}`);
+            const result = await response.json();
+            if (result.success) {
+                setServices(result.data.services);
+            }
+        } catch (error) {
+            console.error('Error fetching services:', error);
+        } finally {
+            setLoading(false);
+        }
+    };
 
     const renderItem = ({ item }) => (
         <TouchableOpacity
@@ -49,17 +52,23 @@ export default function ServiceListScreen({ route, navigation }) {
                 <TouchableOpacity onPress={() => navigation.goBack()}>
                     <Ionicons name="arrow-back" size={24} color={COLORS.black} />
                 </TouchableOpacity>
-                <Text style={styles.title}>{type.toUpperCase()} SERVICES</Text>
+                <Text style={styles.title}>{categoryName?.toUpperCase() || type?.toUpperCase()} SERVICES</Text>
                 <View style={{ width: 24 }} />
             </View>
 
-            <FlatList
-                data={data}
-                renderItem={renderItem}
-                keyExtractor={item => item.id}
-                contentContainerStyle={styles.list}
-                ListEmptyComponent={<Text style={styles.empty}>No services available</Text>}
-            />
+            {loading ? (
+                <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+                    <ActivityIndicator size="large" color={COLORS.roseGold} />
+                </View>
+            ) : (
+                <FlatList
+                    data={services}
+                    renderItem={renderItem}
+                    keyExtractor={item => item._id}
+                    contentContainerStyle={styles.list}
+                    ListEmptyComponent={<Text style={styles.empty}>No services available</Text>}
+                />
+            )}
         </SafeAreaView>
     );
 }
