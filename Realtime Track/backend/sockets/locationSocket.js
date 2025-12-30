@@ -70,6 +70,11 @@ function initializeLocationSocket(io) {
                     timestamp: timestamp || Date.now(),
                 };
 
+                // Stale check log
+                if (timestamp && (Date.now() - timestamp) > 30000) {
+                    console.log(`⚠️ STALE rejected: ${rideId}, age: ${Date.now() - timestamp}ms`);
+                }
+
                 // Store location
                 const success = await locationStore.setLocation(rideId, locationData);
 
@@ -77,6 +82,8 @@ function initializeLocationSocket(io) {
                     socket.emit('warning', { message: 'Stale location rejected' });
                     return;
                 }
+
+                console.log(`📤 BROADCASTING to ride:${rideId}:`, locationData.lat, locationData.lng);
 
                 // Broadcast to all customers in this ride room
                 io.to(`ride:${rideId}`).emit('customer:location:update', {

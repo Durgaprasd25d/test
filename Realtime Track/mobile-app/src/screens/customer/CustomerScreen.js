@@ -244,9 +244,7 @@ export default function CustomerScreen({ route, navigation }) {
     };
 
     const handleLocationUpdate = (locationData) => {
-        console.log('========================================');
-        console.log('📍 CUSTOMER: Location update received');
-        console.log('Raw data:', JSON.stringify(locationData, null, 2));
+        console.log('🚨🚨🚨 [CUSTOMER] LOCATION RECEIVED:', JSON.stringify(locationData));
 
         const newLocation = {
             latitude: locationData.lat,
@@ -254,22 +252,24 @@ export default function CustomerScreen({ route, navigation }) {
             timestamp: locationData.timestamp || Date.now(),
         };
 
-        console.log('📌 New coordinates:', newLocation.latitude.toFixed(6), newLocation.longitude.toFixed(6));
-        console.log('⏰ Timestamp:', new Date(newLocation.timestamp).toLocaleTimeString());
+        const speed = locationData.speed || 0;
+        const newStatusMsg = speed < 0.3 ? 'Technician is waiting nearby' : 'Technician is on the way';
+        setStatusMessage(newStatusMsg);
 
-        // Always update - no filtering for customer side
         if (currentLocation) {
-            const moved = Math.abs(currentLocation.latitude - newLocation.latitude) +
-                Math.abs(currentLocation.longitude - newLocation.longitude);
-            console.log('🔄 Position change:', moved > 0.00001 ? 'MOVED ✅' : 'SAME ⚠️');
+            const latDiff = Math.abs(currentLocation.latitude - newLocation.latitude);
+            const lngDiff = Math.abs(currentLocation.longitude - newLocation.longitude);
+            console.log(`📍 [MOVE CHECK] LatDiff: ${latDiff.toFixed(6)}, LngDiff: ${lngDiff.toFixed(6)} | Speed: ${speed.toFixed(2)}`);
+            if (latDiff === 0 && lngDiff === 0) {
+                console.log('⚠️ [STATIONARY] Technician coordinates have not changed.');
+            } else {
+                console.log('✅ [MOVING] Technician has changed position!');
+            }
         }
 
         setPreviousLocation(currentLocation);
         setCurrentLocation(newLocation);
         setBearing(locationData.bearing || 0);
-
-        console.log('✅ CUSTOMER: State updated - marker should move');
-        console.log('========================================');
     };
 
 
@@ -311,21 +311,13 @@ export default function CustomerScreen({ route, navigation }) {
                     </Marker>
                 ))}
 
-                {/* Show assigned technician's live location - SIMPLE CIRCULAR MARKER */}
+                {/* Show assigned technician's live location - UBER STYLE ANIMATED MARKER */}
                 {currentLocation && assignedTech && (
-                    <Marker
-                        coordinate={{
-                            latitude: currentLocation.latitude,
-                            longitude: currentLocation.longitude
-                        }}
-                        anchor={{ x: 0.5, y: 0.5 }}
-                        flat={true}
-                        rotation={bearing}
-                    >
-                        <View style={styles.technicianMarker}>
-                            <View style={styles.technicianDot} />
-                        </View>
-                    </Marker>
+                    <AnimatedMarker
+                        currentLocation={currentLocation}
+                        previousLocation={previousLocation}
+                        bearing={bearing}
+                    />
                 )}
 
                 {pickupLocation && (

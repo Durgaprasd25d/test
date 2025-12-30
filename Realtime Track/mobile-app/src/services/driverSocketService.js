@@ -60,6 +60,12 @@ class DriverSocketService {
             console.log('Driver socket disconnected:', reason);
             this.isConnected = false;
             this.notifyConnectionChange('disconnected');
+
+            // Uber-level UX: Force immediate manual reconnection if it wasn't a clean close
+            if (reason === 'io server disconnect' || reason === 'transport close' || reason === 'ping timeout') {
+                console.log('🔌 Attempting aggressive manual reconnect...');
+                this.socket.connect();
+            }
         });
 
         this.socket.on('reconnecting', (attemptNumber) => {

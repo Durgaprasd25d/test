@@ -102,13 +102,14 @@ export default function TechnicianNavigationScreen({ route, navigation }) {
 
     const handleLocationUpdate = (locationData) => {
         const newLoc = { latitude: locationData.lat, longitude: locationData.lng };
-        console.log('💚 [UPDATE]:', locationData.lat.toFixed(6), locationData.lng.toFixed(6), 'Speed:', (locationData.speed * 3.6).toFixed(1), 'km/h');
+        console.log('💚 [TECH SCREEN UPDATE]:', locationData.lat.toFixed(6), locationData.lng.toFixed(6), 'Socket Active:', driverSocketService.isConnected);
 
         setCurrentLocation(newLoc);
         setHeading(locationData.bearing);
         setSpeed(locationData.speed);
 
-        driverSocketService.sendLocation(locationData);
+        const sent = driverSocketService.sendLocation(locationData);
+        if (!sent) console.warn('🚨 Failed to send location to socket');
 
         mapRef.current?.animateCamera({
             center: newLoc,
@@ -251,6 +252,9 @@ export default function TechnicianNavigationScreen({ route, navigation }) {
             <View style={styles.speedContainer}>
                 <Text style={styles.speedValue}>{formatSpeed(speed)}</Text>
                 <Text style={styles.speedLabel}>km/h</Text>
+                <Text style={{ fontSize: 8, color: COLORS.grey, marginTop: 4 }}>
+                    GPS: {currentLocation?.latitude.toFixed(4)}, {currentLocation?.longitude.toFixed(4)}
+                </Text>
             </View>
 
             <View style={styles.etaCard}>

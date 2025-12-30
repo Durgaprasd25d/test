@@ -7,7 +7,7 @@
 
 import * as Location from 'expo-location';
 import * as TaskManager from 'expo-task-manager';
-import { calculateBearing } from '../utils/mapUtils';
+import { calculateBearing, calculateDistance } from '../utils/mapUtils';
 import config from '../constants/config';
 
 const BACKGROUND_TASK = config.BACKGROUND_TASK_NAME;
@@ -18,6 +18,7 @@ class DriverLocationService {
         this.locationSubscription = null;
         this.lastLocation = null;
         this.onLocationUpdate = null;
+        this.lastSentLocation = null;
     }
 
     /**
@@ -81,15 +82,29 @@ class DriverLocationService {
             // Configure high-accuracy tracking
             this.locationSubscription = await Location.watchPositionAsync(
                 {
-                    accuracy: Location.Accuracy.BestForNavigation,
-                    timeInterval: config.DRIVER_LOCATION_INTERVAL,
-                    distanceInterval: config.DRIVER_DISTANCE_FILTER,
+                    accuracy: Location.Accuracy.Highest, // Increased to Highest
+                    timeInterval: 1000,
+                    distanceInterval: 0,
                     mayShowUserSettingsDialog: true,
                 },
                 (location) => {
+                    console.log(`📡 GPS RAW: ${location.coords.latitude.toFixed(6)}, ${location.coords.longitude.toFixed(6)} | Acc: ${location.coords.accuracy} | Mocked: ${!!location.mocked}`);
                     this.handleLocationUpdate(location);
                 }
             );
+
+            // Manual heartbeat to "poke" GPS if watcher stalls (every 5s)
+            this.heartbeatInterval = setInterval(async () => {
+                if (this.isTracking) {
+                    try {
+                        const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
+                        console.log('💓 GPS HEARTBEAT:', loc.coords.latitude.toFixed(6), loc.coords.longitude.toFixed(6));
+                        this.handleLocationUpdate(loc);
+                    } catch (e) {
+                        console.warn('GPS Heartbeat failed:', e.message);
+                    }
+                }
+            }, 5000);
 
             this.isTracking = true;
             console.log('Driver location tracking started (foreground)');
@@ -106,30 +121,37 @@ class DriverLocationService {
      */
     async startBackgroundTracking() {
         try {
+            const isRegistered = await TaskManager.isTaskRegisteredAsync(BACKGROUND_TASK);
+            if (isRegistered) {
+                console.log('Background task already registered');
+                return true;
+            }
+
             const hasPermission = await this.requestPermissions();
             if (!hasPermission) {
                 throw new Error('Location permission not granted');
             }
 
-            // Start background location task
+            // Start background location task with optimized settings
             await Location.startLocationUpdatesAsync(BACKGROUND_TASK, {
-                accuracy: Location.Accuracy.BestForNavigation,
-                timeInterval: config.DRIVER_LOCATION_INTERVAL,
-                distanceInterval: config.DRIVER_DISTANCE_FILTER,
+                accuracy: Location.Accuracy.Balanced,
+                timeInterval: 5000,
+                distanceInterval: 10,
                 foregroundService: {
-                    notificationTitle: 'Driver Tracking Active',
-                    notificationBody: 'Sharing your location with customers',
-                    notificationColor: '#4CAF50',
+                    notificationTitle: 'Technician Online',
+                    notificationBody: 'Your location is being tracked for active service.',
+                    notificationColor: '#B76E79',
                 },
                 pausesUpdatesAutomatically: false,
                 showsBackgroundLocationIndicator: true,
             });
 
-            console.log('Background location tracking started');
+            console.log('Background tracking started');
             return true;
         } catch (error) {
-            console.error('Error starting background tracking:', error);
-            throw error;
+            console.warn('Background tracking start failed:', error.message);
+            // Don't throw, let foreground tracking continue
+            return false;
         }
     }
 
@@ -143,6 +165,11 @@ class DriverLocationService {
                 this.locationSubscription = null;
             }
 
+            if (this.heartbeatInterval) {
+                clearInterval(this.heartbeatInterval);
+                this.heartbeatInterval = null;
+            }
+
             // Stop background tracking
             const isTaskRegistered = await TaskManager.isTaskRegisteredAsync(BACKGROUND_TASK);
             if (isTaskRegistered) {
@@ -151,6 +178,7 @@ class DriverLocationService {
 
             this.isTracking = false;
             this.lastLocation = null;
+            this.lastSentLocation = null;
             this.onLocationUpdate = null;
 
             console.log('Location tracking stopped');
@@ -191,7 +219,19 @@ class DriverLocationService {
 
         this.lastLocation = { latitude, longitude };
 
-        if (this.onLocationUpdate) {
+        // Uber-level UX: We still recommend some filtering for the SERVER/CUSTOMER updates
+        // to prevent "dancing" markers due to GPS noise.
+        // However, we'll decrease the threshold to 0.5m for "Exact" feel.
+        let shouldEmit = true;
+        if (this.lastSentLocation) {
+            const movedDistance = calculateDistance(this.lastSentLocation, { latitude, longitude });
+            if (movedDistance < 0.5) { // Reduced from 2m to 0.5m for "Exact" requirement
+                shouldEmit = false;
+            }
+        }
+
+        if (shouldEmit && this.onLocationUpdate) {
+            this.lastSentLocation = { latitude, longitude };
             this.onLocationUpdate(locationData);
         }
     }
@@ -221,8 +261,8 @@ class DriverLocationService {
     }
 }
 
-// Define background task (must be defined at top level)
-TaskManager.defineTask(BACKGROUND_TASK, ({ data, error }) => {
+// Define background task (must be defined at top level for Expo)
+TaskManager.defineTask(BACKGROUND_TASK, async ({ data, error }) => {
     if (error) {
         console.error('Background location error:', error);
         return;
@@ -232,10 +272,24 @@ TaskManager.defineTask(BACKGROUND_TASK, ({ data, error }) => {
         const { locations } = data;
         if (locations && locations.length > 0) {
             const location = locations[0];
-            console.log('Background location update:', location.coords);
+            const { latitude, longitude, heading, speed } = location.coords;
 
-            // Emit to socket or store locally
-            // This will be connected to socket service in the component
+            console.log(`🌍 BACKGROUND GPS: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}`);
+
+            // Use driverSocketService directly in background task
+            // Note: Since this runs in a separate context, we must import it
+            const driverSocketService = (await import('./driverSocketService')).default;
+
+            if (driverSocketService.isConnected && driverSocketService.rideId) {
+                driverSocketService.sendLocation({
+                    lat: latitude,
+                    lng: longitude,
+                    bearing: heading || 0,
+                    speed: speed || 0,
+                    timestamp: Date.now(),
+                    accuracy: location.coords.accuracy,
+                });
+            }
         }
     }
 });

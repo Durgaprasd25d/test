@@ -18,9 +18,9 @@ export default {
     GOOGLE_MAPS_API_KEY,
 
     // Driver Location Updates
-    DRIVER_LOCATION_INTERVAL: 1000, // 1 second (was 2)
-    DRIVER_DISTANCE_FILTER: 2, // 2 meters (was 10)
-    DRIVER_LOCATION_ACCURACY: 'high', // high, balanced, low
+    DRIVER_LOCATION_INTERVAL: 2000, // 2 seconds (Uber-level response)
+    DRIVER_DISTANCE_FILTER: 1, // 1 meter (Catch small movements)
+    DRIVER_LOCATION_ACCURACY: 'highest', // Match user recommendation
 
     // Customer Polling Fallback
     POLLING_INTERVAL: 3000, // 3 seconds (was 5)
