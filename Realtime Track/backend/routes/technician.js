@@ -142,14 +142,14 @@ router.post('/jobs/accept', async (req, res) => {
 
         const technician = await Technician.getOrCreate(technicianId);
 
-        // Uber-style Enforcement: Check if COD is blocked
-        if (job.paymentMethod === 'COD' && technician.wallet.commissionDue >= technician.wallet.codLimit) {
-            return res.status(403).json({
-                success: false,
-                error: 'COD_LIMIT_EXCEEDED',
-                message: 'Please clear pending company dues to accept cash jobs.'
-            });
-        }
+        // COD DISABLED - No limit check needed
+        // if (job.paymentMethod === 'COD' && technician.wallet.commissionDue >= technician.wallet.codLimit) {
+        //     return res.status(403).json({
+        //         success: false,
+        //         error: 'COD_LIMIT_EXCEEDED',
+        //         message: 'Please clear pending company dues to accept cash jobs.'
+        //     });
+        // }
 
         job.technician = technicianId;
         job.status = 'accepted';
@@ -236,26 +236,16 @@ router.post('/jobs/:jobId/verify-otp', async (req, res) => {
             const earnings = job.pricing.technicianEarnings;
             const commission = job.pricing.commission;
 
-            if (job.paymentMethod === 'COD') {
-                // Technician received full cash: ₹1000
-                // We ONLY credit their share (₹800) to balance
-                // And add ₹200 to commissionDue (what they owe us)
-                technician.wallet.balance += earnings;
-                technician.wallet.commissionDue += commission;
-            } else {
-                // ONLINE PAYMENT: Auto-recovery logic
-                // If technician owes money, use these earnings to clear dues first
-                if (technician.wallet.commissionDue > 0) {
-                    const recoverableAmount = Math.min(technician.wallet.commissionDue, earnings);
-                    technician.wallet.commissionDue -= recoverableAmount;
-                    const remainingEarnings = earnings - recoverableAmount;
-                    technician.wallet.balance += remainingEarnings;
-
-                    console.log(`🏦 Auto-recovery: Recovered ₹${recoverableAmount} from ₹${earnings} online earnings.`);
-                } else {
-                    technician.wallet.balance += earnings;
-                }
-            }
+            // ONLINE ONLY: Clean wallet credit
+            // COD logic disabled
+            // if (job.paymentMethod === 'COD') {
+            //     technician.wallet.balance += earnings;
+            //     technician.wallet.commissionDue += commission;
+            // } else {
+            // Online Payment: Simple credit
+            technician.wallet.balance += earnings;
+            console.log(`💰 Online Payment: Technician earned ₹${earnings}`);
+            // }
 
             // Update stats
             technician.stats.todayEarnings += earnings;
@@ -281,7 +271,7 @@ router.post('/jobs/:jobId/verify-otp', async (req, res) => {
                 amount: commission,
                 description: `Company Commission #${job._id.toString().substring(0, 8)}`,
                 job: job._id,
-                status: job.paymentMethod === 'COD' ? 'pending' : 'settled'
+                status: 'completed' // All payments are online now
             });
         }
 

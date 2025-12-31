@@ -7,7 +7,7 @@ const Technician = require('../models/Technician');
 // Request a ride (Job)
 router.post('/request', async (req, res) => {
     try {
-        const { pickup, destination, serviceType, customerId, paymentMethod } = req.body;
+        const { pickup, destination, serviceType, customerId, paymentMethod, paymentTiming } = req.body;
         const rideId = `job_${Date.now()}`;
 
         const ride = new Ride({
@@ -17,7 +17,8 @@ router.post('/request', async (req, res) => {
             serviceType: serviceType || 'service',
             customerId,
             status: 'REQUESTED',
-            paymentMethod: paymentMethod || 'COD'
+            paymentMethod: paymentMethod || 'ONLINE', // COD disabled - Online only
+            paymentTiming: paymentTiming || 'PREPAID' // Default to prepaid
         });
 
         await ride.save();
@@ -29,7 +30,8 @@ router.post('/request', async (req, res) => {
             pickup,
             destination,
             serviceType: ride.serviceType,
-            paymentMethod: ride.paymentMethod
+            paymentMethod: ride.paymentMethod,
+            paymentTiming: ride.paymentTiming
         });
 
         res.json({ success: true, data: ride });
@@ -88,6 +90,76 @@ router.get('/pending', async (req, res) => {
     }
 });
 
+// Get all jobs grouped by status (for technician services list)
+router.get('/all-jobs', async (req, res) => {
+    try {
+        const { technicianId } = req.query;
+
+        // Get all jobs categorized by status
+        const pending = await Ride.find({
+            status: 'REQUESTED',
+            driverId: null // Not assigned yet
+        }).sort({ createdAt: -1 }).limit(20);
+
+        const accepted = await Ride.find({
+            status: 'ACCEPTED',
+            driverId: technicianId
+        }).sort({ createdAt: -1 }).limit(10);
+
+        const inProgress = await Ride.find({
+            status: { $in: ['ARRIVED', 'IN_PROGRESS'] },
+            driverId: technicianId
+        }).sort({ createdAt: -1 }).limit(10);
+
+        const completed = await Ride.find({
+            status: 'COMPLETED',
+            driverId: technicianId
+        }).sort({ createdAt: -1 }).limit(20);
+
+        res.json({
+            success: true,
+            data: {
+                pending: pending.map(r => ({
+                    rideId: r.rideId,
+                    serviceType: r.serviceType,
+                    pickup: r.pickup,
+                    price: r.price || 1000,
+                    paymentMethod: r.paymentMethod,
+                    paymentTiming: r.paymentTiming,
+                    createdAt: r.createdAt
+                })),
+                accepted: accepted.map(r => ({
+                    rideId: r.rideId,
+                    serviceType: r.serviceType,
+                    pickup: r.pickup,
+                    price: r.price || 1000,
+                    status: r.status,
+                    createdAt: r.createdAt
+                })),
+                inProgress: inProgress.map(r => ({
+                    rideId: r.rideId,
+                    serviceType: r.serviceType,
+                    pickup: r.pickup,
+                    price: r.price || 1000,
+                    status: r.status,
+                    createdAt: r.createdAt
+                })),
+                completed: completed.map(r => ({
+                    rideId: r.rideId,
+                    serviceType: r.serviceType,
+                    pickup: r.pickup,
+                    price: r.price || 1000,
+                    completedAt: r.timestamp,
+                    createdAt: r.createdAt
+                }))
+            }
+        });
+    } catch (error) {
+        console.error('Get all jobs error:', error);
+        res.status(500).json({ success: false, error: 'Server error' });
+    }
+});
+
 // Accept a job
 router.post('/accept', async (req, res) => {
     try {
@@ -100,14 +172,14 @@ router.post('/accept', async (req, res) => {
 
         const technician = await Technician.getOrCreate(driverId);
 
-        // Uber-style Enforcement: Check if COD is blocked
-        if (ride.paymentMethod === 'COD' && technician.wallet.commissionDue >= technician.wallet.codLimit) {
-            return res.status(403).json({
-                success: false,
-                error: 'COD_LIMIT_EXCEEDED',
-                message: 'Please clear pending company dues to accept cash jobs.'
-            });
-        }
+        // COD DISABLED - No need to check COD limits anymore
+        // if (ride.paymentMethod === 'COD' && technician.wallet.commissionDue >= technician.wallet.codLimit) {
+        //     return res.status(403).json({
+        //         success: false,
+        //         error: 'COD_LIMIT_EXCEEDED',
+        //         message: 'Please clear pending company dues to accept cash jobs.'
+        //     });
+        // }
 
         // Generate 4-digit Entrance OTP
         const arrivalOtp = Math.floor(1000 + Math.random() * 9000).toString();
@@ -223,15 +295,16 @@ router.post('/end-service', async (req, res) => {
         const completionOtp = Math.floor(10000 + Math.random() * 90000).toString();
         ride.completionOtp = completionOtp;
 
-        // If COD, we can show OTP immediately to complete.
-        // If ONLINE, it remains hidden until paymentStatus is PAID.
+        // ONLINE ONLY: OTP remains hidden until payment is verified
         await ride.save();
 
         const io = req.app.get('io');
         io.to(`ride:${rideId}`).emit('ride:service_ended', {
             rideId,
             paymentMethod: ride.paymentMethod,
-            completionOtp: ride.paymentMethod === 'COD' ? completionOtp : null // Only send if COD
+            paymentTiming: ride.paymentTiming,
+            price: ride.price || 1000, // Send amount for POSTPAID payment
+            completionOtp: ride.paymentTiming === 'PREPAID' && ride.paymentStatus === 'PAID' ? completionOtp : null
         });
 
         res.json({ success: true, data: ride });
@@ -287,23 +360,16 @@ router.post('/complete', async (req, res) => {
             const commission = Math.round(price * COMMISSION_RATE);
             const earnings = price - commission;
 
-            if (ride.paymentMethod === 'COD') {
-                // Technician keeps the cash, so we mark it as owed
-                technician.wallet.balance += earnings;
-                technician.wallet.commissionDue += commission;
-                console.log(`💰 COD Completion: Technician earned ₹${earnings}, owes ₹${commission} commission.`);
-            } else {
-                // Online Payment: Auto-recovery logic
-                if (technician.wallet.commissionDue > 0) {
-                    const recoverableAmount = Math.min(technician.wallet.commissionDue, earnings);
-                    technician.wallet.commissionDue -= recoverableAmount;
-                    const remainingEarnings = earnings - recoverableAmount;
-                    technician.wallet.balance += remainingEarnings;
-                    console.log(`🏦 Online Completion: Recovered ₹${recoverableAmount} from dues.`);
-                } else {
-                    technician.wallet.balance += earnings;
-                }
-            }
+            // ONLINE ONLY: Simple wallet credit (no COD complications)
+            // COD logic disabled
+            // if (ride.paymentMethod === 'COD') {
+            //     technician.wallet.balance += earnings;
+            //     technician.wallet.commissionDue += commission;
+            // } else {
+            // Online Payment: Clean credit to wallet
+            technician.wallet.balance += earnings;
+            console.log(`💰 Online Payment: Technician earned ₹${earnings}, no dues tracking.`);
+            // }
 
             // Update stats
             technician.stats.todayEarnings += earnings;

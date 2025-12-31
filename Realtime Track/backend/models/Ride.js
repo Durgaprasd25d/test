@@ -56,8 +56,20 @@ const RideSchema = new mongoose.Schema({
     },
     paymentMethod: {
         type: String,
-        enum: ['COD', 'ONLINE'],
-        default: 'COD'
+        // enum: ['COD', 'ONLINE'], // COD DISABLED - Online only for MVP
+        enum: ['ONLINE'],
+        default: 'ONLINE'
+    },
+    paymentTiming: {
+        type: String,
+        enum: ['PREPAID', 'POSTPAID'], // PREPAID = pay at booking, POSTPAID = pay after service
+        default: 'PREPAID'
+    },
+    razorpayDetails: {
+        orderId: String,
+        paymentId: String,
+        signature: String,
+        paidAt: Date
     },
     timestamp: {
         type: Date,

@@ -13,6 +13,7 @@ import authService from '../../services/authService';
 import config from '../../constants/config';
 import technicianSocketService from '../../services/technicianSocketService';
 import rideService from '../../services/rideService';
+import ServicesListSheet from '../../components/ServicesListSheet';
 
 const { width } = Dimensions.get('window');
 
@@ -27,6 +28,7 @@ export default function TechnicianDashboardScreen({ navigation }) {
     const [showJobModal, setShowJobModal] = useState(false);
     const [pendingJob, setPendingJob] = useState(null);
     const [wallet, setWallet] = useState({ balance: 0, commissionDue: 0, codLimit: 500 });
+    const [showServicesSheet, setShowServicesSheet] = useState(false);
 
     useEffect(() => {
         loadUser();
@@ -114,9 +116,39 @@ export default function TechnicianDashboardScreen({ navigation }) {
         }
     };
 
-    const handleRejectJob = () => {
+    const handleDeclineJob = () => {
         setShowJobModal(false);
         setPendingJob(null);
+    };
+
+    const handleAcceptFromList = async (job) => {
+        setShowServicesSheet(false);
+
+        try {
+            const technicianData = await authService.getUser();
+            const driverId = technicianData?.id || technicianData?._id;
+
+            const response = await fetch(`${config.BACKEND_URL}/api/ride/accept`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    rideId: job.rideId,
+                    driverId: driverId
+                })
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                Alert.alert('Success', 'Job accepted successfully!');
+                loadDashboardData(); // Refresh dashboard data
+            } else {
+                Alert.alert('Error', result.error || result.message || 'Failed to accept job');
+            }
+        } catch (error) {
+            console.error('Accept job error:', error);
+            Alert.alert('Error', 'Failed to accept job');
+        }
     };
 
     const loadUser = async () => {
@@ -236,6 +268,13 @@ export default function TechnicianDashboardScreen({ navigation }) {
                         <Text style={styles.actionText}>View All</Text>
                     </TouchableOpacity>
 
+                    <TouchableOpacity style={styles.actionCard} onPress={() => setShowServicesSheet(true)}>
+                        <View style={styles.actionIcon}>
+                            <Ionicons name="briefcase-outline" size={24} color={COLORS.technicianPrimary} />
+                        </View>
+                        <Text style={styles.actionText}>Services</Text>
+                    </TouchableOpacity>
+
                     <TouchableOpacity style={styles.actionCard}>
                         <View style={styles.actionIcon}>
                             <Ionicons name="bar-chart-outline" size={24} color={COLORS.technicianPrimary} />
@@ -276,7 +315,15 @@ export default function TechnicianDashboardScreen({ navigation }) {
                 visible={showJobModal}
                 jobData={pendingJob}
                 onAccept={handleAcceptJob}
-                onReject={handleRejectJob}
+                onReject={handleDeclineJob}
+            />
+
+            {/* Services List Bottom Sheet */}
+            <ServicesListSheet
+                visible={showServicesSheet}
+                onClose={() => setShowServicesSheet(false)}
+                technicianId={user?.id || user?._id}
+                onAcceptJob={handleAcceptFromList}
             />
         </SafeAreaView>
 

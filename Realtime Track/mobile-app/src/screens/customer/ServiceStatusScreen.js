@@ -9,16 +9,49 @@ import customerSocketService from '../../services/customerSocketService';
 const { width } = Dimensions.get('window');
 
 export default function ServiceStatusScreen({ route, navigation }) {
-    const { rideId, otp, initialStep = 'in_progress' } = route?.params || {};
-    const [step, setStep] = useState(initialStep); // in_progress, completed, rating
+    const { rideId, otp, initialStep = 'in_progress', total, paymentTiming } = route?.params || {};
+    const [step, setStep] = useState(initialStep); // in_progress, service_ended, completed, rating
+    const [showPayButton, setShowPayButton] = useState(false);
+    const [serviceAmount, setServiceAmount] = useState(total || 0);
 
     useEffect(() => {
         const socket = customerSocketService.getSocket();
         if (socket) {
+            // Listen for service ended event
+            socket.on('ride:service_ended', (data) => {
+                console.log('🔔 Service ended event received:', data);
+                if (data.price) {
+                    setServiceAmount(data.price); // Update amount from backend
+                }
+                if (data.paymentTiming === 'POSTPAID' && data.paymentMethod === 'ONLINE') {
+                    // Show payment button for postpaid bookings
+                    setStep('service_ended');
+                    setShowPayButton(true);
+                } else if (data.paymentTiming === 'PREPAID') {
+                    // For prepaid, service is complete, no payment needed
+                    setStep('completed');
+                }
+            });
+
+            // Listen for payment success
+            socket.on('payment:success', () => {
+                console.log('💰 Payment successful');
+                setShowPayButton(false);
+                setStep('completed');
+            });
+
             socket.on('ride:completed', () => {
                 setStep('completed');
             });
         }
+
+        return () => {
+            if (socket) {
+                socket.off('ride:service_ended');
+                socket.off('payment:success');
+                socket.off('ride:completed');
+            }
+        };
     }, []);
 
     const renderInProgress = () => (
@@ -36,6 +69,39 @@ export default function ServiceStatusScreen({ route, navigation }) {
                 <Text style={styles.statusTitle}>Service in Progress</Text>
                 <Text style={styles.statusSubtitle}>Your AC unit is being serviced by our expert.</Text>
             </View>
+        </View>
+    );
+
+    const renderServiceEnded = () => (
+        <View style={styles.center}>
+            <View style={[styles.iconCircle, { backgroundColor: COLORS.gold }]}>
+                <Ionicons name="checkmark-done" size={80} color={COLORS.white} />
+            </View>
+            <Text style={styles.statusTitle}>Service Completed!</Text>
+            <Text style={styles.statusSubtitle}>The technician has finished the service. Please complete the payment to proceed.</Text>
+
+            <View style={styles.paymentCard}>
+                <Text style={styles.paymentLabel}>Amount to Pay</Text>
+                <Text style={styles.paymentAmount}>₹{serviceAmount}</Text>
+            </View>
+
+            <TouchableOpacity
+                style={[styles.actionBtn, { backgroundColor: COLORS.roseGold, flexDirection: 'row', alignItems: 'center' }]}
+                onPress={() => {
+                    navigation.navigate('CustomerRazorpayCheckout', {
+                        rideId: rideId,
+                        amount: serviceAmount,
+                        paymentTiming: 'POSTPAID'
+                    });
+                }}
+            >
+                <Ionicons name="card" size={20} color={COLORS.white} style={{ marginRight: 8 }} />
+                <Text style={styles.actionBtnText}>Pay Now</Text>
+            </TouchableOpacity>
+
+            <Text style={styles.secureText}>
+                <Ionicons name="shield-checkmark" size={14} color={COLORS.grey} /> Secure payment via Razorpay
+            </Text>
         </View>
     );
 
@@ -85,6 +151,7 @@ export default function ServiceStatusScreen({ route, navigation }) {
 
             <View style={styles.content}>
                 {step === 'in_progress' && renderInProgress()}
+                {step === 'service_ended' && renderServiceEnded()}
                 {step === 'completed' && renderCompleted()}
                 {step === 'rating' && renderRating()}
             </View>
@@ -110,4 +177,8 @@ const styles = StyleSheet.create({
     actionBtn: { backgroundColor: COLORS.roseGold, height: 56, width: '100%', borderRadius: 16, justifyContent: 'center', alignItems: 'center', marginTop: 40, ...SHADOWS.medium },
     actionBtnText: { color: COLORS.white, fontSize: 16, fontWeight: 'bold' },
     starsRow: { flexDirection: 'row', gap: 10, marginTop: SPACING.xl },
+    paymentCard: { backgroundColor: COLORS.primaryBg, padding: SPACING.xl, borderRadius: 20, width: '100%', alignItems: 'center', marginTop: 30, borderWidth: 2, borderColor: COLORS.roseGoldMuted },
+    paymentLabel: { fontSize: 14, color: COLORS.grey, marginBottom: 8, fontWeight: '600' },
+    paymentAmount: { fontSize: 42, fontWeight: '900', color: COLORS.roseGold },
+    secureText: { fontSize: 12, color: COLORS.grey, marginTop: 15, textAlign: 'center' },
 });

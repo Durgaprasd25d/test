@@ -8,7 +8,7 @@ const rideService = {
     /**
      * Request an AC service job
      */
-    requestRide: async (pickup, destination, serviceType = 'service', paymentMethod = 'COD') => {
+    requestRide: async (pickup, destination, serviceType = 'service', paymentMethod = 'ONLINE', paymentTiming = 'PREPAID') => {
         try {
             const user = await authService.getUser();
             const customerId = user?.id || user?.mobile || 'demo_user';
@@ -18,7 +18,8 @@ const rideService = {
                 destination,
                 serviceType,
                 customerId,
-                paymentMethod
+                paymentMethod,
+                paymentTiming // PREPAID or POSTPAID
             });
             return response.data;
         } catch (error) {
@@ -128,6 +129,42 @@ const rideService = {
             return {
                 success: false,
                 error: 'Failed to fetch job history'
+            };
+        }
+    },
+
+    /**
+     * Create Razorpay order for payment (PREPAID or POSTPAID)
+     */
+    createRazorpayOrder: async (rideId, amount) => {
+        try {
+            const response = await axios.post(`${config.BACKEND_URL}/api/payment/create-order`, {
+                rideId,
+                amount
+            });
+            return response.data;
+        } catch (error) {
+            return {
+                success: false,
+                error: error.response?.data?.error || 'Failed to create payment order'
+            };
+        }
+    },
+
+    /**
+     * Verify Razorpay payment
+     */
+    verifyRazorpayPayment: async (rideId, paymentData) => {
+        try {
+            const response = await axios.post(`${config.BACKEND_URL}/api/payment/verify-payment`, {
+                rideId,
+                ...paymentData
+            });
+            return response.data;
+        } catch (error) {
+            return {
+                success: false,
+                error: error.response?.data?.error || 'Payment verification failed'
             };
         }
     }

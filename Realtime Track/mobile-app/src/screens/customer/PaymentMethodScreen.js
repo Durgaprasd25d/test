@@ -8,15 +8,27 @@ import rideService from '../../services/rideService';
 const { width } = Dimensions.get('window');
 
 const METHODS = [
-    { id: 'online', name: 'Razorpay / Card', icon: 'card-outline', desc: 'Secure online payment' },
-    // Wallet disabled for now - will be enabled later
-    // { id: 'wallet', name: 'My Wallet', icon: 'wallet-outline', desc: 'Balance: ₹2,500' },
-    { id: 'cod', name: 'Cash on Service', icon: 'cash-outline', desc: 'Pay after job completion' },
+    {
+        id: 'prepaid',
+        name: 'Pay Now (Prepaid)',
+        icon: 'card-outline',
+        desc: 'Pay securely via Razorpay before service',
+        timing: 'PREPAID'
+    },
+    {
+        id: 'postpaid',
+        name: 'Pay After Service (Postpaid)',
+        icon: 'time-outline',
+        desc: 'Pay online after service completion',
+        timing: 'POSTPAID'
+    },
+    // COD Disabled for MVP
+    // { id: 'cod', name: 'Cash on Service', icon: 'cash-outline', desc: 'Pay cash after job completion' },
 ];
 
 export default function PaymentMethodScreen({ route, navigation }) {
     const { total, service, address, time, date } = route.params;
-    const [selectedMethod, setSelectedMethod] = useState('cod'); // Default to Cash on Service
+    const [selectedMethod, setSelectedMethod] = useState('prepaid'); // Default to Prepaid
     const [loading, setLoading] = useState(false);
 
     const handlePayment = async () => {
@@ -53,12 +65,17 @@ export default function PaymentMethodScreen({ route, navigation }) {
                 return;
             }
 
+            // Get payment timing from selected method
+            const selectedMethodObj = METHODS.find(m => m.id === selectedMethod);
+            const paymentTiming = selectedMethodObj?.timing || 'PREPAID';
+
             // Make booking request
             const response = await rideService.requestRide(
                 pickupLocation,
                 { address: 'Technician Hub', lat: 0, lng: 0 },
                 mappedServiceType,
-                selectedMethod.toUpperCase() // Ensure it's 'COD' or 'ONLINE'
+                'ONLINE', // Always online now
+                paymentTiming // PREPAID or POSTPAID
             );
 
             console.log('Booking response:', response);
@@ -66,14 +83,27 @@ export default function PaymentMethodScreen({ route, navigation }) {
             if (response.success) {
                 // Extract rideId from response - handle both formats
                 const jobId = response.rideId || response.data?.rideId || 'UNKNOWN';
-                console.log('✅ Navigating to payment status with Job ID:', jobId);
+                console.log('✅ Navigating to payment with Job ID:', jobId);
 
-                navigation.navigate('PaymentStatus', {
-                    status: 'success',
-                    rideId: jobId,
-                    total,
-                    paymentMethod: selectedMethod
-                });
+                // If PREPAID, navigate to Razorpay checkout immediately
+                if (paymentTiming === 'PREPAID') {
+                    navigation.navigate('CustomerRazorpayCheckout', {
+                        rideId: jobId,
+                        amount: total,
+                        paymentTiming: 'PREPAID',
+                        service,
+                        address
+                    });
+                } else {
+                    // If POSTPAID, navigate to status screen (payment happens after service)
+                    navigation.navigate('PaymentStatus', {
+                        status: 'success',
+                        rideId: jobId,
+                        total,
+                        paymentMethod: 'online',
+                        paymentTiming: 'POSTPAID'
+                    });
+                }
             } else {
                 Alert.alert('Booking Failed', response.error || 'Unable to create booking');
             }
