@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const Technician = require('../models/Technician');
 const Transaction = require('../models/Transaction');
-const Job = require('../models/Job');
+const Ride = require('../models/Ride');
 
 // Get pending commission breakdown
 router.get('/pending', async (req, res) => {

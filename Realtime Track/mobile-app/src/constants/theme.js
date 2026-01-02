@@ -39,7 +39,18 @@ export const COLORS = {
     primaryBg: '#FFF5F6', // Very light rose tint
     secondaryBg: '#F8F9FA',
     overlay: 'rgba(0, 0, 0, 0.4)',
+
+    // Premium Slate & Indigo Palette (New Redesign)
+    slate: '#0f172a',
+    slateLight: '#1e293b',
+    indigo: '#4f46e5',
+    violet: '#7c3aed',
+    premiumBg: '#f8fafc',
+    textMain: '#1e293b',
+    textMuted: '#64748b',
+    borderLight: '#f1f5f9',
 };
+
 
 export const SPACING = {
     xs: 4,
@@ -61,27 +72,28 @@ export const FONTS = {
 export const SHADOWS = {
     none: { elevation: 0, shadowOpacity: 0 },
     light: {
-        shadowColor: "#B76E79",
+        shadowColor: "#64748b",
         shadowOffset: { width: 0, height: 2 },
         shadowOpacity: 0.1,
         shadowRadius: 4,
         elevation: 2,
     },
     medium: {
-        shadowColor: "#B76E79",
+        shadowColor: "#64748b",
         shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.15,
         shadowRadius: 8,
         elevation: 5,
     },
     heavy: {
-        shadowColor: "#B76E79",
+        shadowColor: "#0f172a",
         shadowOffset: { width: 0, height: 8 },
         shadowOpacity: 0.2,
         shadowRadius: 12,
         elevation: 10,
     }
 };
+
 
 export default {
     COLORS,

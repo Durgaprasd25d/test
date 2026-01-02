@@ -7,7 +7,10 @@
 // Load from .env file (create .env from .env.example)
 // In Expo SDK 49+, use EXPO_PUBLIC_ prefix for automatic environment variable injection
 const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'http://10.241.66.236:4000';
-const GOOGLE_MAPS_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY || '';
+const GOOGLE_MAPS_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY || 'AIzaSyBnA5Sw2GQC-Jt0rjH40qaGOx3vkALKWKA';
+if (!GOOGLE_MAPS_API_KEY) {
+    console.warn('⚠️ Google Maps API Key is missing! Places suggestions will not work.');
+}
 const RAZORPAY_KEYID = process.env.EXPO_PUBLIC_RAZORPAY_KEYID || 'rzp_test_RxiuviHEGyiaLv';
 
 export default {

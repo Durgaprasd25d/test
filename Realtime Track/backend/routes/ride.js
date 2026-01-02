@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const Ride = require('../models/Ride');
 const Technician = require('../models/Technician');
+const Transaction = require('../models/Transaction');
 
 
 // Request a ride (Job)
@@ -24,15 +25,19 @@ router.post('/request', async (req, res) => {
         await ride.save();
 
         const io = req.app.get('io');
-        // Broadcast to all potential technicians
-        io.emit('ride:requested', {
-            rideId,
-            pickup,
-            destination,
-            serviceType: ride.serviceType,
-            paymentMethod: ride.paymentMethod,
-            paymentTiming: ride.paymentTiming
-        });
+
+        // Broadcast to all potential technicians ONLY IF it's POSTPAID
+        // PREPAID jobs are broadcasted after payment success
+        if (ride.paymentTiming === 'POSTPAID') {
+            io.emit('ride:requested', {
+                rideId,
+                pickup,
+                destination,
+                serviceType: ride.serviceType,
+                paymentMethod: ride.paymentMethod,
+                paymentTiming: ride.paymentTiming
+            });
+        }
 
         res.json({ success: true, data: ride });
     } catch (error) {
@@ -83,7 +88,14 @@ router.get('/:rideId', async (req, res) => {
 // Get pending jobs (for technicians)
 router.get('/pending', async (req, res) => {
     try {
-        const rides = await Ride.find({ status: 'REQUESTED' }).sort({ createdAt: -1 });
+        // Only show jobs that are either POSTPAID or PREPAID-AND-PAID
+        const rides = await Ride.find({
+            status: 'REQUESTED',
+            $or: [
+                { paymentTiming: 'POSTPAID' },
+                { paymentTiming: 'PREPAID', paymentStatus: 'PAID' }
+            ]
+        }).sort({ createdAt: -1 });
         res.json({ success: true, data: rides });
     } catch (error) {
         res.status(500).json({ success: false, error: 'Server error' });
@@ -96,9 +108,14 @@ router.get('/all-jobs', async (req, res) => {
         const { technicianId } = req.query;
 
         // Get all jobs categorized by status
+        // PENDING jobs must be validated (Paid if Prepaid)
         const pending = await Ride.find({
             status: 'REQUESTED',
-            driverId: null // Not assigned yet
+            driverId: null, // Not assigned yet
+            $or: [
+                { paymentTiming: 'POSTPAID' },
+                { paymentTiming: 'PREPAID', paymentStatus: 'PAID' }
+            ]
         }).sort({ createdAt: -1 }).limit(20);
 
         const accepted = await Ride.find({
@@ -303,8 +320,8 @@ router.post('/end-service', async (req, res) => {
             rideId,
             paymentMethod: ride.paymentMethod,
             paymentTiming: ride.paymentTiming,
-            price: ride.price || 1000, // Send amount for POSTPAID payment
-            completionOtp: ride.paymentTiming === 'PREPAID' && ride.paymentStatus === 'PAID' ? completionOtp : null
+            price: ride.price || 1000,
+            completionOtp: ride.completionOtp // Always send as requested
         });
 
         res.json({ success: true, data: ride });
@@ -324,6 +341,19 @@ router.post('/payment-success', async (req, res) => {
         await ride.save();
 
         const io = req.app.get('io');
+
+        // IMPORTANT: Broadcast the job to technicians now that it's PAID
+        if (ride.paymentTiming === 'PREPAID') {
+            io.emit('ride:requested', {
+                rideId: ride.rideId,
+                pickup: ride.pickup,
+                destination: ride.destination,
+                serviceType: ride.serviceType,
+                paymentMethod: ride.paymentMethod,
+                paymentTiming: ride.paymentTiming
+            });
+        }
+
         // Sending OTP now that payment is successful
         io.to(`ride:${rideId}`).emit('payment:success', {
             rideId,
@@ -376,6 +406,26 @@ router.post('/complete', async (req, res) => {
             technician.stats.completedJobs += 1;
             technician.stats.totalJobs += 1;
             await technician.save();
+
+            // Create credit transaction for earnings
+            await Transaction.create({
+                technician: ride.driverId,
+                type: 'credit',
+                amount: earnings,
+                description: `Service Earnings #${ride.rideId.substring(0, 8)}`,
+                job: ride._id,
+                status: 'completed'
+            });
+
+            // Create debit transaction for commission
+            await Transaction.create({
+                technician: ride.driverId,
+                type: 'debit',
+                amount: commission,
+                description: `Company Commission #${ride.rideId.substring(0, 8)}`,
+                job: ride._id,
+                status: 'completed'
+            });
         }
 
         const io = req.app.get('io');
@@ -405,6 +455,40 @@ router.get('/history/:userId', async (req, res) => {
         res.json({ success: true, data: history });
     } catch (error) {
         console.error('History fetch error:', error);
+        res.status(500).json({ success: false, error: 'Server error' });
+    }
+});
+
+// Cancel a ride (Job)
+router.post('/cancel', async (req, res) => {
+    try {
+        const { rideId, reason } = req.body;
+        const ride = await Ride.findOne({ rideId });
+
+        if (!ride) {
+            return res.status(404).json({ success: false, error: 'Job not found' });
+        }
+
+        // Only allow cancellation if not already completed or cancelled
+        if (['COMPLETED', 'CANCELLED'].includes(ride.status)) {
+            return res.status(400).json({ success: false, error: `Job already ${ride.status.toLowerCase()}` });
+        }
+
+        ride.status = 'CANCELLED';
+        ride.cancellationReason = reason || 'User cancelled';
+        await ride.save();
+
+        const io = req.app.get('io');
+        io.to(`ride:${rideId}`).emit('ride:cancelled', { rideId, reason: ride.cancellationReason });
+
+        // Notify technician if assigned
+        if (ride.driverId) {
+            io.to(`user:${ride.driverId}`).emit('job:cancelled', { rideId, reason: ride.cancellationReason });
+        }
+
+        res.json({ success: true, message: 'Job cancelled successfully' });
+    } catch (error) {
+        console.error('Cancel job error:', error);
         res.status(500).json({ success: false, error: 'Server error' });
     }
 });

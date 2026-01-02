@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const Technician = require('../models/Technician');
-const Job = require('../models/Job');
+const Ride = require('../models/Ride');
 const Transaction = require('../models/Transaction');
 
 // Get dashboard stats
@@ -17,11 +17,11 @@ router.get('/dashboard', async (req, res) => {
         const technician = await Technician.getOrCreate(userId);
         console.log('Technician profile:', technician ? 'Found/Created' : 'Error');
 
-        // Get active job
-        const activeJob = await Job.findOne({
-            technician: userId,
-            status: { $in: ['accepted', 'arrived', 'in_progress'] }
-        }).populate('customer', 'name mobile');
+        // Get active job from Ride model
+        const activeRide = await Ride.findOne({
+            driverId: userId,
+            status: { $in: ['ACCEPTED', 'ARRIVED', 'IN_PROGRESS'] }
+        }).populate('customerId', 'name mobile');
 
         res.json({
             success: true,
@@ -29,13 +29,12 @@ router.get('/dashboard', async (req, res) => {
                 todayEarnings: technician.stats.todayEarnings,
                 completedJobs: technician.stats.completedJobs,
                 targetJobs: 10,
-                activeJob: activeJob ? {
-                    id: activeJob._id,
-                    serviceType: activeJob.serviceType,
-                    location: activeJob.location.address,
-                    duration: activeJob.duration,
-                    status: activeJob.status,
-                    earnings: activeJob.pricing.technicianEarnings
+                activeJob: activeRide ? {
+                    id: activeRide.rideId,
+                    serviceType: activeRide.serviceType,
+                    location: activeRide.pickup.address,
+                    status: activeRide.status,
+                    earnings: Math.round((activeRide.price || 1000) * 0.8) // 80% to technician
                 } : null,
                 isOnline: technician.isOnline,
                 wallet: {
@@ -292,21 +291,21 @@ router.get('/history', async (req, res) => {
         const userId = req.query.userId || req.user?.id;
         const limit = parseInt(req.query.limit) || 20;
 
-        const jobs = await Job.find({
-            technician: userId,
-            status: 'completed'
+        const rides = await Ride.find({
+            driverId: userId,
+            status: 'COMPLETED'
         })
-            .sort({ 'timeline.completedAt': -1 })
+            .sort({ updatedAt: -1 })
             .limit(limit)
-            .select('serviceType location pricing status timeline');
+            .select('serviceType pickup price status updatedAt');
 
-        const formattedJobs = jobs.map(job => ({
-            id: job._id,
-            serviceType: job.serviceType,
-            location: job.location.address,
-            status: job.status,
-            earnings: job.pricing.technicianEarnings,
-            date: job.timeline.completedAt.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+        const formattedJobs = rides.map(ride => ({
+            id: ride.rideId,
+            serviceType: ride.serviceType,
+            location: ride.pickup.address,
+            status: ride.status,
+            earnings: Math.round((ride.price || 1000) * 0.8),
+            date: new Date(ride.updatedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
         }));
 
         res.json({

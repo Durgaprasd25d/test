@@ -48,6 +48,15 @@ export default function TechnicianNavigationScreen({ route, navigation }) {
         };
     }, [rideId]);
 
+    const handleRideCancelled = (data) => {
+        console.log('❌ Ride cancelled while navigating:', data);
+        Alert.alert(
+            'Booking Cancelled',
+            'The customer has cancelled this booking.',
+            [{ text: 'OK', onPress: () => navigation.navigate('TechnicianDashboard') }]
+        );
+    };
+
     const connectSocket = () => {
         driverSocketService.connect(rideId, (status) => {
             if (status === 'connected') {
@@ -59,7 +68,7 @@ export default function TechnicianNavigationScreen({ route, navigation }) {
                     }
                 }, 500);
             }
-        });
+        }, handleRideCancelled);
     };
 
     const fetchRoute = async () => {

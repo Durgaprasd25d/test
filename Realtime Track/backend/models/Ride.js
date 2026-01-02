@@ -71,6 +71,10 @@ const RideSchema = new mongoose.Schema({
         signature: String,
         paidAt: Date
     },
+    cancellationReason: {
+        type: String,
+        default: null
+    },
     timestamp: {
         type: Date,
         default: Date.now

@@ -13,20 +13,23 @@ class DriverSocketService {
         this.isConnected = false;
         this.rideId = null;
         this.onConnectionChange = null;
+        this.onRideCancelled = null;
     }
 
     /**
      * Connect to WebSocket server
      * @param {string} rideId - Ride identifier
      * @param {function} onConnectionChange - Callback for connection status
+     * @param {function} onRideCancelled - Callback when ride is cancelled
      */
-    connect(rideId, onConnectionChange) {
+    connect(rideId, onConnectionChange, onRideCancelled) {
         if (this.socket) {
             this.disconnect();
         }
 
         this.rideId = rideId;
         this.onConnectionChange = onConnectionChange;
+        this.onRideCancelled = onRideCancelled;
 
         console.log('Connecting to socket:', config.SOCKET_URL);
 
@@ -96,6 +99,14 @@ class DriverSocketService {
 
         this.socket.on('warning', (warning) => {
             console.warn('Socket warning:', warning);
+        });
+
+        // Listen for cancellations
+        this.socket.on('ride:cancelled', (data) => {
+            console.log('❌ Ride cancelled:', data);
+            if (this.onRideCancelled) {
+                this.onRideCancelled(data);
+            }
         });
 
         // Connection errors

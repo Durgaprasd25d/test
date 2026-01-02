@@ -33,9 +33,9 @@ export default function TechnicianWalletScreen({ navigation }) {
     };
 
     const renderHeader = () => (
-        <>
+        <View>
             <View style={styles.header}>
-                <TouchableOpacity onPress={() => navigation.goBack()}>
+                <TouchableOpacity onPress={() => navigation.canGoBack() && navigation.goBack()}>
                     <Ionicons name="arrow-back" size={24} color={COLORS.black} />
                 </TouchableOpacity>
                 <Text style={styles.headerTitle}>WALLET</Text>
@@ -90,7 +90,7 @@ export default function TechnicianWalletScreen({ navigation }) {
             <View style={styles.sectionHeader}>
                 <Text style={styles.sectionTitle}>Transaction History</Text>
             </View>
-        </>
+        </View>
     );
 
     const renderTransaction = ({ item }) => {
@@ -144,7 +144,7 @@ export default function TechnicianWalletScreen({ navigation }) {
             <FlatList
                 data={transactions}
                 renderItem={renderTransaction}
-                keyExtractor={item => item.id}
+                keyExtractor={(item, index) => item._id || item.id || index.toString()}
                 ListHeaderComponent={renderHeader}
                 contentContainerStyle={styles.scrollContent}
                 stickyHeaderIndices={[0]}

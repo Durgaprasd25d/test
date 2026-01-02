@@ -30,7 +30,7 @@ export default function TechnicianHistoryScreen({ navigation }) {
 
     const renderHeader = () => (
         <View style={styles.header}>
-            <TouchableOpacity onPress={() => navigation.goBack()}>
+            <TouchableOpacity onPress={() => navigation.canGoBack() && navigation.goBack()}>
                 <Ionicons name="arrow-back" size={24} color={COLORS.black} />
             </TouchableOpacity>
             <Text style={styles.headerTitle}>JOB HISTORY</Text>
@@ -50,7 +50,7 @@ export default function TechnicianHistoryScreen({ navigation }) {
             <FlatList
                 data={jobs}
                 renderItem={({ item }) => <JobCard job={item} style={{ marginBottom: SPACING.md }} />}
-                keyExtractor={item => item.id}
+                keyExtractor={(item, index) => item._id || item.id || index.toString()}
                 contentContainerStyle={styles.list}
                 ListHeaderComponent={renderHeader}
                 ListEmptyComponent={renderEmpty}

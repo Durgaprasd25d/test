@@ -90,6 +90,20 @@ router.post('/verify-payment', async (req, res) => {
             completionOtp: ride.completionOtp // Send OTP if service is already complete
         });
 
+        // IMPORTANT: Broadcast job to all technicians if it was PREPAID payment
+        // (Postpaid jobs are broadcasted at request time)
+        if (ride.paymentTiming === 'PREPAID') {
+            console.log('📢 Broadcasting PREPAID job after payment success:', rideId);
+            io.emit('ride:requested', {
+                rideId: ride.rideId,
+                pickup: ride.pickup,
+                destination: ride.destination,
+                serviceType: ride.serviceType,
+                paymentMethod: ride.paymentMethod,
+                paymentTiming: ride.paymentTiming
+            });
+        }
+
         res.json({
             success: true,
             message: 'Payment verified successfully',

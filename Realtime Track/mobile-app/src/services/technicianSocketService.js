@@ -13,20 +13,24 @@ class TechnicianSocketService {
         this.socket = null;
         this.isConnected = false;
         this.onJobRequest = null;
+        this.onJobCancelled = null;
         this.onConnectionChange = null;
     }
 
     /**
      * Connect to WebSocket server
+     * @param {string} userId - User identifier for private room
      * @param {function} onJobRequest - Callback when new job is requested
+     * @param {function} onJobCancelled - Callback when a job is cancelled
      * @param {function} onConnectionChange - Callback for connection status
      */
-    connect(onJobRequest, onConnectionChange) {
+    connect(userId, onJobRequest, onJobCancelled, onConnectionChange) {
         if (this.socket) {
             this.disconnect();
         }
 
         this.onJobRequest = onJobRequest;
+        this.onJobCancelled = onJobCancelled;
         this.onConnectionChange = onConnectionChange;
 
         console.log('Technician connecting to socket:', config.SOCKET_URL);
@@ -39,6 +43,21 @@ class TechnicianSocketService {
             timeout: 10000,
         });
 
+        this.socket.on('connect', () => {
+            console.log('Technician socket connected');
+            this.isConnected = true;
+
+            // Identify user to join private room
+            if (userId) {
+                this.socket.emit('identify', { userId });
+                console.log('Technician identified:', userId);
+            }
+
+            if (this.onConnectionChange) {
+                this.onConnectionChange('connected');
+            }
+        });
+
         this.setupEventListeners();
         return this.socket;
     }
@@ -49,28 +68,7 @@ class TechnicianSocketService {
     setupEventListeners() {
         if (!this.socket) return;
 
-        this.socket.on('connect', () => {
-            console.log('Technician socket connected');
-            this.isConnected = true;
-            if (this.onConnectionChange) {
-                this.onConnectionChange('connected');
-            }
-        });
-
-        this.socket.on('disconnect', () => {
-            console.log('Technician socket disconnected');
-            this.isConnected = false;
-            if (this.onConnectionChange) {
-                this.onConnectionChange('disconnected');
-            }
-        });
-
-        this.socket.on('connect_error', (error) => {
-            console.error('Technician socket connection error:', error);
-            if (this.onConnectionChange) {
-                this.onConnectionChange('error');
-            }
-        });
+        // Note: connect/disconnect/error are handled in the connect() method or defaults
 
         // Listen for new job requests
         this.socket.on('ride:requested', (data) => {
@@ -80,9 +78,20 @@ class TechnicianSocketService {
             }
         });
 
-        // Listen for job cancellations
+        // Listen for job cancellations (sent to ride room)
         this.socket.on('ride:cancelled', (data) => {
-            console.log('❌ Job cancelled:', data);
+            console.log('❌ Ride cancelled (ride room):', data);
+            if (this.onJobCancelled) {
+                this.onJobCancelled(data);
+            }
+        });
+
+        // Listen for job cancellations (sent to private user room)
+        this.socket.on('job:cancelled', (data) => {
+            console.log('❌ Job cancelled (user room):', data);
+            if (this.onJobCancelled) {
+                this.onJobCancelled(data);
+            }
         });
     }
 

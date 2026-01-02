@@ -16,6 +16,19 @@ function initializeLocationSocket(io) {
         console.log(`Client connected: ${socket.id}`);
 
         /**
+         * User identifies themselves to join a private room
+         * Event: 'identify'
+         * Payload: { userId: string }
+         */
+        socket.on('identify', (data) => {
+            const { userId } = data;
+            if (userId) {
+                socket.join(`user:${userId}`);
+                console.log(`User ${userId} identified and joined room user:${userId}`);
+            }
+        });
+
+        /**
          * Driver joins a ride room
          * Event: 'driver:join'
          * Payload: { rideId: string }

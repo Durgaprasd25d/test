@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Dimensions, Alert } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Dimensions, Alert, StatusBar, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { COLORS, SPACING, SHADOWS } from '../../constants/theme';
 import rideService from '../../services/rideService';
 
@@ -10,82 +11,61 @@ const { width } = Dimensions.get('window');
 const METHODS = [
     {
         id: 'prepaid',
-        name: 'Pay Now (Prepaid)',
-        icon: 'card-outline',
-        desc: 'Pay securely via Razorpay before service',
-        timing: 'PREPAID'
+        name: 'Instant Checkout',
+        icon: 'flash',
+        desc: 'Unlock special priority service with prepaid booking.',
+        timing: 'PREPAID',
+        accent: COLORS.indigo
     },
     {
         id: 'postpaid',
-        name: 'Pay After Service (Postpaid)',
-        icon: 'time-outline',
-        desc: 'Pay online after service completion',
-        timing: 'POSTPAID'
+        name: 'Pay After Service',
+        icon: 'time',
+        desc: 'Review the job and pay online once completed.',
+        timing: 'POSTPAID',
+        accent: '#7c3aed'
     },
-    // COD Disabled for MVP
-    // { id: 'cod', name: 'Cash on Service', icon: 'cash-outline', desc: 'Pay cash after job completion' },
 ];
 
 export default function PaymentMethodScreen({ route, navigation }) {
     const { total, service, address, time, date } = route.params;
-    const [selectedMethod, setSelectedMethod] = useState('prepaid'); // Default to Prepaid
+    const [selectedMethod, setSelectedMethod] = useState('prepaid');
     const [loading, setLoading] = useState(false);
 
     const handlePayment = async () => {
         setLoading(true);
         try {
-            console.log('🎯 Starting booking with data:', { service, address, time, date });
-
-            // Map service.id to valid serviceType for backend
             const serviceTypeMap = {
-                'r1': 'repair',
-                'r2': 'service',
-                'r3': 'install',
-                'i1': 'install',
-                's1': 'service',
-                'emergency': 'emergency'
+                'r1': 'repair', 'r2': 'service', 'r3': 'install',
+                'i1': 'install', 's1': 'service', 'emergency': 'emergency'
             };
 
             const mappedServiceType = serviceTypeMap[service?.id] || 'service';
-            console.log('Mapped service type:', service?.id, '→', mappedServiceType);
-
-            // Format location properly - backend expects lat/lng (NOT latitude/longitude)
             const pickupLocation = {
                 address: address?.description || address?.address || 'No address provided',
                 lat: address?.location?.lat || 0,
                 lng: address?.location?.lng || 0
             };
 
-            console.log('Pickup location:', pickupLocation);
-
-            // Validate coordinates
             if (!pickupLocation.lat || !pickupLocation.lng) {
                 Alert.alert('Invalid Location', 'Please select a valid location with coordinates');
                 setLoading(false);
                 return;
             }
 
-            // Get payment timing from selected method
             const selectedMethodObj = METHODS.find(m => m.id === selectedMethod);
             const paymentTiming = selectedMethodObj?.timing || 'PREPAID';
 
-            // Make booking request
             const response = await rideService.requestRide(
                 pickupLocation,
                 { address: 'Technician Hub', lat: 0, lng: 0 },
                 mappedServiceType,
-                'ONLINE', // Always online now
-                paymentTiming // PREPAID or POSTPAID
+                'ONLINE',
+                paymentTiming
             );
 
-            console.log('Booking response:', response);
-
             if (response.success) {
-                // Extract rideId from response - handle both formats
                 const jobId = response.rideId || response.data?.rideId || 'UNKNOWN';
-                console.log('✅ Navigating to payment with Job ID:', jobId);
-
-                // If PREPAID, navigate to Razorpay checkout immediately
                 if (paymentTiming === 'PREPAID') {
                     navigation.navigate('CustomerRazorpayCheckout', {
                         rideId: jobId,
@@ -95,7 +75,6 @@ export default function PaymentMethodScreen({ route, navigation }) {
                         address
                     });
                 } else {
-                    // If POSTPAID, navigate to status screen (payment happens after service)
                     navigation.navigate('PaymentStatus', {
                         status: 'success',
                         rideId: jobId,
@@ -108,7 +87,6 @@ export default function PaymentMethodScreen({ route, navigation }) {
                 Alert.alert('Booking Failed', response.error || 'Unable to create booking');
             }
         } catch (error) {
-            console.error('❌ Payment error:', error);
             Alert.alert('Error', 'Something went wrong: ' + error.message);
         } finally {
             setLoading(false);
@@ -116,77 +94,289 @@ export default function PaymentMethodScreen({ route, navigation }) {
     };
 
     return (
-        <SafeAreaView style={styles.container}>
-            <View style={styles.header}>
-                <TouchableOpacity onPress={() => navigation.goBack()}>
-                    <Ionicons name="arrow-back" size={24} color={COLORS.black} />
-                </TouchableOpacity>
-                <Text style={styles.title}>CHOOSE PAYMENT</Text>
-                <View style={{ width: 24 }} />
-            </View>
+        <View style={styles.container}>
+            <StatusBar barStyle="light-content" />
+
+            <LinearGradient
+                colors={[COLORS.slate, COLORS.slateLight]}
+                style={styles.header}
+            >
+                <SafeAreaView edges={['top']}>
+                    <View style={styles.headerContent}>
+                        <TouchableOpacity
+                            style={styles.backBtn}
+                            onPress={() => navigation.goBack()}
+                        >
+                            <Ionicons name="arrow-back" size={24} color="#fff" />
+                        </TouchableOpacity>
+                        <Text style={styles.headerTitle}>Secure Checkout</Text>
+                        <View style={{ width: 44 }} />
+                    </View>
+                </SafeAreaView>
+            </LinearGradient>
 
             <View style={styles.content}>
-                <View style={styles.totalCard}>
-                    <Text style={styles.totalLabel}>Total Payable Amount</Text>
-                    <Text style={styles.totalValue}>₹{total.toFixed(2)}</Text>
+                <View style={styles.summaryCard}>
+                    <View style={styles.summaryLeft}>
+                        <Text style={styles.summaryLabel}>Final Amount</Text>
+                        <View style={styles.amountBox}>
+                            <Text style={styles.currency}>₹</Text>
+                            <Text style={styles.amount}>{total.toFixed(2)}</Text>
+                        </View>
+                    </View>
+                    <View style={styles.summaryRight}>
+                        <Ionicons name="shield-checkmark" size={40} color="rgba(255,255,255,0.3)" />
+                    </View>
                 </View>
 
-                <Text style={styles.sectionTitle}>Payment Methods</Text>
+                <Text style={styles.sectionTitle}>Preferred Payment Timing</Text>
+
                 <View style={styles.methodList}>
-                    {METHODS.map((method) => (
-                        <TouchableOpacity
-                            key={method.id}
-                            style={[styles.methodItem, selectedMethod === method.id && styles.activeMethod]}
-                            onPress={() => setSelectedMethod(method.id)}
-                        >
-                            <View style={[styles.iconCircle, selectedMethod === method.id && styles.activeIconCircle]}>
-                                <Ionicons name={method.icon} size={24} color={selectedMethod === method.id ? COLORS.white : COLORS.roseGold} />
-                            </View>
-                            <View style={styles.methodDetails}>
-                                <Text style={styles.methodName}>{method.name}</Text>
-                                <Text style={styles.methodDesc}>{method.desc}</Text>
-                            </View>
-                            <View style={styles.radio}>
-                                {selectedMethod === method.id && <View style={styles.radioInner} />}
-                            </View>
-                        </TouchableOpacity>
-                    ))}
+                    {METHODS.map((method) => {
+                        const isActive = selectedMethod === method.id;
+                        return (
+                            <TouchableOpacity
+                                key={method.id}
+                                activeOpacity={0.9}
+                                style={[
+                                    styles.methodCard,
+                                    isActive && { borderColor: method.accent, borderWidth: 2 }
+                                ]}
+                                onPress={() => setSelectedMethod(method.id)}
+                            >
+                                <View style={[
+                                    styles.methodIconBox,
+                                    { backgroundColor: isActive ? method.accent : '#f8fafc' }
+                                ]}>
+                                    <Ionicons
+                                        name={method.icon}
+                                        size={24}
+                                        color={isActive ? '#fff' : COLORS.textMuted}
+                                    />
+                                </View>
+
+                                <View style={styles.methodInfo}>
+                                    <Text style={[
+                                        styles.methodName,
+                                        isActive && { color: method.accent }
+                                    ]}>
+                                        {method.name}
+                                    </Text>
+                                    <Text style={styles.methodDesc}>{method.desc}</Text>
+                                </View>
+
+                                <View style={[
+                                    styles.radioCircle,
+                                    isActive && { borderColor: method.accent }
+                                ]}>
+                                    {isActive && (
+                                        <View style={[styles.radioDot, { backgroundColor: method.accent }]} />
+                                    )}
+                                </View>
+                            </TouchableOpacity>
+                        );
+                    })}
+                </View>
+
+                <View style={styles.securityBox}>
+                    <Ionicons name="lock-closed" size={16} color={COLORS.textMuted} />
+                    <Text style={styles.securityText}>
+                        Encryption protocols ensure your data is 100% private.
+                    </Text>
                 </View>
             </View>
 
             <View style={styles.footer}>
                 <TouchableOpacity
-                    style={styles.payBtn}
+                    style={styles.bookBtn}
+                    activeOpacity={0.8}
                     onPress={handlePayment}
                     disabled={loading}
                 >
-                    <Text style={styles.payBtnText}>{loading ? 'Processing...' : 'Confirm & Book'}</Text>
+                    <LinearGradient
+                        colors={[COLORS.indigo, '#3730a3']}
+                        style={styles.bookBtnGradient}
+                    >
+                        {loading ? (
+                            <Text style={styles.bookBtnText}>Securing Booking...</Text>
+                        ) : (
+                            <>
+                                <Text style={styles.bookBtnText}>Confirm Booking</Text>
+                                <Ionicons name="chevron-forward" size={18} color="#fff" />
+                            </>
+                        )}
+                    </LinearGradient>
                 </TouchableOpacity>
             </View>
-        </SafeAreaView>
+        </View>
     );
 }
 
 const styles = StyleSheet.create({
-    container: { flex: 1, backgroundColor: COLORS.white },
-    header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: SPACING.lg, borderBottomWidth: 1, borderBottomColor: COLORS.greyLight },
-    title: { fontSize: 16, fontWeight: 'bold', color: COLORS.black, letterSpacing: 1 },
-    content: { padding: SPACING.xl },
-    totalCard: { backgroundColor: COLORS.roseGold, borderRadius: 25, padding: SPACING.xl, alignItems: 'center', marginBottom: SPACING.xxl, ...SHADOWS.medium },
-    totalLabel: { fontSize: 14, color: COLORS.white, opacity: 0.9, marginBottom: 8 },
-    totalValue: { fontSize: 32, fontWeight: '900', color: COLORS.white },
-    sectionTitle: { fontSize: 18, fontWeight: 'bold', color: COLORS.black, marginBottom: SPACING.lg },
-    methodList: { gap: SPACING.md },
-    methodItem: { flexDirection: 'row', alignItems: 'center', padding: SPACING.md, borderRadius: 20, borderWidth: 1, borderColor: COLORS.greyLight, backgroundColor: COLORS.white },
-    activeMethod: { borderColor: COLORS.roseGold, backgroundColor: COLORS.primaryBg },
-    iconCircle: { width: 50, height: 50, borderRadius: 15, backgroundColor: COLORS.primaryBg, justifyContent: 'center', alignItems: 'center', marginRight: SPACING.md },
-    activeIconCircle: { backgroundColor: COLORS.roseGold },
-    methodDetails: { flex: 1 },
-    methodName: { fontSize: 16, fontWeight: 'bold', color: COLORS.black },
-    methodDesc: { fontSize: 12, color: COLORS.grey },
-    radio: { width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: COLORS.roseGold, justifyContent: 'center', alignItems: 'center' },
-    radioInner: { width: 12, height: 12, borderRadius: 6, backgroundColor: COLORS.roseGold },
-    footer: { padding: SPACING.xl, position: 'absolute', bottom: 0, width: width },
-    payBtn: { backgroundColor: COLORS.roseGold, height: 56, borderRadius: 16, justifyContent: 'center', alignItems: 'center', ...SHADOWS.medium },
-    payBtnText: { color: COLORS.white, fontSize: 16, fontWeight: 'bold' },
+    container: {
+        flex: 1,
+        backgroundColor: COLORS.premiumBg
+    },
+    header: {
+        paddingBottom: 20,
+        borderBottomLeftRadius: 24,
+        borderBottomRightRadius: 24,
+        ...SHADOWS.medium,
+    },
+    headerContent: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        paddingHorizontal: 20,
+        paddingTop: 10,
+    },
+    backBtn: {
+        width: 44,
+        height: 44,
+        borderRadius: 12,
+        backgroundColor: 'rgba(255,255,255,0.15)',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    headerTitle: {
+        color: '#fff',
+        fontSize: 18,
+        fontWeight: 'bold',
+    },
+    content: {
+        flex: 1,
+        padding: 24,
+        paddingTop: 30,
+    },
+    summaryCard: {
+        backgroundColor: COLORS.slate,
+        borderRadius: 28,
+        padding: 24,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        marginBottom: 35,
+        ...SHADOWS.heavy
+    },
+    summaryLabel: {
+        fontSize: 13,
+        color: 'rgba(255,255,255,0.6)',
+        fontWeight: '700',
+        textTransform: 'uppercase',
+        letterSpacing: 1,
+        marginBottom: 8,
+    },
+    amountBox: {
+        flexDirection: 'row',
+        alignItems: 'flex-start',
+    },
+    currency: {
+        fontSize: 18,
+        fontWeight: '700',
+        color: '#fff',
+        marginTop: 6,
+        marginRight: 4,
+    },
+    amount: {
+        fontSize: 36,
+        fontWeight: '900',
+        color: '#fff'
+    },
+    sectionTitle: {
+        fontSize: 17,
+        fontWeight: '900',
+        color: COLORS.textMain,
+        marginBottom: 20,
+        marginLeft: 4,
+    },
+    methodList: {
+        gap: 16
+    },
+    methodCard: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        padding: 20,
+        borderRadius: 24,
+        backgroundColor: '#fff',
+        borderWidth: 1.5,
+        borderColor: COLORS.borderLight,
+        ...SHADOWS.light,
+    },
+    methodIconBox: {
+        width: 52,
+        height: 52,
+        borderRadius: 16,
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginRight: 16
+    },
+    methodInfo: {
+        flex: 1
+    },
+    methodName: {
+        fontSize: 16,
+        fontWeight: '800',
+        color: COLORS.textMain
+    },
+    methodDesc: {
+        fontSize: 12,
+        color: COLORS.textMuted,
+        marginTop: 4,
+        lineHeight: 18,
+    },
+    radioCircle: {
+        width: 24,
+        height: 24,
+        borderRadius: 12,
+        borderWidth: 2,
+        borderColor: '#e2e8f0',
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginLeft: 10,
+    },
+    radioDot: {
+        width: 12,
+        height: 12,
+        borderRadius: 6,
+    },
+    securityBox: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 8,
+        marginTop: 30,
+        paddingHorizontal: 20,
+    },
+    securityText: {
+        fontSize: 12,
+        color: COLORS.textMuted,
+        fontWeight: '500',
+        textAlign: 'center',
+    },
+    footer: {
+        padding: 24,
+        paddingBottom: Platform.OS === 'ios' ? 40 : 24,
+        backgroundColor: '#fff',
+        borderTopWidth: 1,
+        borderColor: COLORS.borderLight,
+    },
+    bookBtn: {
+        height: 60,
+        borderRadius: 18,
+        overflow: 'hidden',
+        ...SHADOWS.medium
+    },
+    bookBtnGradient: {
+        flex: 1,
+        flexDirection: 'row',
+        justifyContent: 'center',
+        alignItems: 'center',
+        gap: 10,
+    },
+    bookBtnText: {
+        color: '#fff',
+        fontSize: 18,
+        fontWeight: '800'
+    },
 });
+

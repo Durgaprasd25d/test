@@ -21,7 +21,7 @@ const transactionSchema = new mongoose.Schema({
     },
     job: {
         type: mongoose.Schema.Types.ObjectId,
-        ref: 'Job'
+        ref: 'Ride'
     },
     status: {
         type: String,

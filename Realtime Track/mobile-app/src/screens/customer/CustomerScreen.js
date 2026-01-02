@@ -10,21 +10,24 @@ import {
     Linking,
     Alert,
     Modal,
+    StatusBar,
+    ScrollView as RNScrollView,
+    Animated,
 } from 'react-native';
-import MapView, { PROVIDER_GOOGLE, Marker } from 'react-native-maps';
+import { PanGestureHandler, State } from 'react-native-gesture-handler';
+import MapView, { PROVIDER_GOOGLE, Marker, Polyline } from 'react-native-maps';
 import MapViewDirections from 'react-native-maps-directions';
-import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import AnimatedMarker from '../../components/AnimatedMarker';
 import customerSocketService from '../../services/customerSocketService';
 import pollingService from '../../services/pollingService';
 import technicianMapService from '../../services/technicianMapService';
 import useLocationStore from '../../store/useLocationStore';
-import { getCameraRegion, isGPSNoise } from '../../utils/mapUtils';
 import config from '../../constants/config';
 import { COLORS, SPACING, SHADOWS } from '../../constants/theme';
 
-const { width } = Dimensions.get('window');
+const { width, height } = Dimensions.get('window');
 
 export default function CustomerScreen({ route, navigation }) {
     const { rideId } = route?.params || {};
@@ -38,8 +41,7 @@ export default function CustomerScreen({ route, navigation }) {
     } = useLocationStore();
 
     const [connectionStatus, setConnectionStatus] = useState('connecting');
-    const [statusMessage, setStatusMessage] = useState('Assigning technician...');
-    const [isCameraFollowing, setIsCameraFollowing] = useState(true);
+    const [statusMessage, setStatusMessage] = useState('Locating nearby experts...');
     const [currentLocation, setCurrentLocation] = useState(null);
     const [previousLocation, setPreviousLocation] = useState(null);
     const [bearing, setBearing] = useState(0);
@@ -49,28 +51,86 @@ export default function CustomerScreen({ route, navigation }) {
     const [entranceOtp, setEntranceOtp] = useState(null);
     const [mainOtp, setMainOtp] = useState(null);
     const [paymentMethod, setPaymentMethod] = useState('COD');
+    const [paymentStatus, setPaymentStatus] = useState('PENDING');
+    const [paymentTiming, setPaymentTiming] = useState('PREPAID');
     const [showPaymentModal, setShowPaymentModal] = useState(false);
+    const [showCancelModal, setShowCancelModal] = useState(false);
+    const [cancelReason, setCancelReason] = useState('');
+
+    const CANCEL_REASONS = [
+        "Technician delaying too much",
+        "Change of plans / Emergency",
+        "Incorrect service type selected",
+        "Found a better price elsewhere",
+        "No longer need the service",
+        "Other"
+    ];
+
     const assignedTechRef = useRef(null);
 
-    // Sync ref with state
+    // Bottom Sheet Animation State
+    const translateY = useRef(new Animated.Value(0)).current;
+    const [isSheetOpen, setIsSheetOpen] = useState(false);
+    const SHEET_HEIGHT = 450;
+    const CLOSED_OFFSET = 280; // Distance to push down when closed
+
+    const toggleBottomSheet = () => {
+        const toValue = isSheetOpen ? 0 : CLOSED_OFFSET;
+        Animated.spring(translateY, {
+            toValue,
+            useNativeDriver: true,
+            bounciness: 4
+        }).start();
+        setIsSheetOpen(!isSheetOpen);
+    };
+
+    const onGestureEvent = Animated.event(
+        [{ nativeEvent: { translationY: translateY } }],
+        { useNativeDriver: true }
+    );
+
+    const onHandlerStateChange = (event) => {
+        if (event.nativeEvent.oldState === State.ACTIVE) {
+            const { translationY, velocityY } = event.nativeEvent;
+
+            if (translationY > 100 || velocityY > 500) {
+                // Close
+                Animated.spring(translateY, {
+                    toValue: CLOSED_OFFSET,
+                    useNativeDriver: true
+                }).start();
+                setIsSheetOpen(false);
+            } else if (translationY < -100 || velocityY < -500) {
+                // Open
+                Animated.spring(translateY, {
+                    toValue: 0,
+                    useNativeDriver: true
+                }).start();
+                setIsSheetOpen(true);
+            } else {
+                // Snap back
+                Animated.spring(translateY, {
+                    toValue: isSheetOpen ? 0 : CLOSED_OFFSET,
+                    useNativeDriver: true
+                }).start();
+            }
+        }
+    };
+
     useEffect(() => {
         assignedTechRef.current = assignedTech;
     }, [assignedTech]);
 
     useEffect(() => {
-        // Fetch initially
         fetchOnlineTechnicians();
         fetchRideDetails();
 
-        // Refresh every 10 seconds until assigned
         const intervalId = setInterval(() => {
             if (!assignedTechRef.current) {
-                console.log('⏱️ Periodic refresh check...');
                 fetchOnlineTechnicians();
                 fetchRideDetails();
             }
-        }, 10000);
-
+        }, 8000);
 
         customerSocketService.connect(
             rideId,
@@ -83,29 +143,22 @@ export default function CustomerScreen({ route, navigation }) {
             customerSocketService.disconnect();
             pollingService.stop();
         };
-    }, [rideId]); // REMOVED assignedTech dependency to stop infinite loop
+    }, [rideId]);
 
     const fetchOnlineTechnicians = async () => {
         const result = await technicianMapService.getOnlineTechnicians();
         if (result.success) {
-            console.log('Online technicians:', result.technicians.length);
             setOnlineTechnicians(result.technicians);
         }
     };
 
     const fetchRideDetails = async () => {
         try {
-            console.log('🔍 Fetching ride details for:', rideId);
             const response = await fetch(`${config.BACKEND_URL}/api/ride/${rideId}`);
             const result = await response.json();
 
-            console.log('📄 Ride details response:', JSON.stringify(result, null, 2));
-
             if (result.success && result.data) {
                 const ride = result.data;
-                console.log('🚦 Current ride status:', ride.status);
-
-                // Set pickup location from DB
                 if (ride.pickup) {
                     setPickupLocation({
                         address: ride.pickup.address,
@@ -114,38 +167,58 @@ export default function CustomerScreen({ route, navigation }) {
                     });
                 }
 
-                if (ride.status === 'ACCEPTED' || ride.status === 'STARTED' || ride.status === 'ARRIVED' || ride.status === 'IN_PROGRESS' || ride.status === 'COMPLETED') {
-                    console.log('👨‍🔧 Technician already assigned:', ride.technician?.name);
+                if (['ACCEPTED', 'STARTED', 'ARRIVED', 'IN_PROGRESS', 'COMPLETED'].includes(ride.status)) {
                     setAssignedTech(ride.technician);
-
-                    // Set initial live location from DB if available
                     if (ride.technician?.location) {
-                        const initialLoc = {
+                        setCurrentLocation({
                             latitude: ride.technician.location.lat,
                             longitude: ride.technician.location.lng,
                             timestamp: Date.now()
-                        };
-                        console.log('📍 Setting initial technician location from DB:', initialLoc);
-                        setCurrentLocation(initialLoc);
+                        });
                     }
 
                     setRideStatus(ride.status);
                     setEntranceOtp(ride.arrivalOtp);
                     setMainOtp(ride.completionOtp);
-                    setPaymentMethod(ride.paymentMethod || 'COD');
+                    setPaymentMethod(ride.paymentMethod || 'ONLINE');
+                    setPaymentStatus(ride.paymentStatus || 'PENDING');
+                    setPaymentTiming(ride.paymentTiming || 'PREPAID');
 
                     const messages = {
-                        'ACCEPTED': 'Technician is on the way!',
-                        'ARRIVED': 'Technician has arrived!',
-                        'IN_PROGRESS': 'Service in progress...',
-                        'COMPLETED': 'Service Completed!'
+                        'ACCEPTED': 'Technician is en route',
+                        'ARRIVED': 'Technician has arrived',
+                        'IN_PROGRESS': 'System diagnostic in progress',
+                        'COMPLETED': 'Service finalized successfully',
+                        'CANCELLED': 'Booking was cancelled'
                     };
-                    setStatusMessage(messages[ride.status] || 'Technician is here');
+                    setStatusMessage(messages[ride.status] || 'Expert is working');
                     setOnlineTechnicians([]);
                 }
             }
         } catch (error) {
-            console.error('❌ Error fetching ride details:', error);
+            console.error('Error fetching ride details:', error);
+        }
+    };
+
+    const handleCancelRide = async (reason) => {
+        try {
+            const response = await fetch(`${config.BACKEND_URL}/api/ride/cancel`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ rideId, reason })
+            });
+            const result = await response.json();
+            if (result.success) {
+                setRideStatus('CANCELLED');
+                setStatusMessage('Booking cancelled');
+                setShowCancelModal(false);
+                Alert.alert('Cancelled', 'Your booking has been cancelled successfully.');
+                setTimeout(() => navigation.navigate('Home'), 2000);
+            } else {
+                Alert.alert('Error', result.error || 'Failed to cancel booking');
+            }
+        } catch (error) {
+            Alert.alert('Network Error', 'Unable to process cancellation at this time.');
         }
     };
 
@@ -162,11 +235,9 @@ export default function CustomerScreen({ route, navigation }) {
                 setShowPaymentModal(false);
             }
         } catch (error) {
-            console.error('Update payment error:', error);
-            Alert.alert('Error', 'Could not update payment method');
+            Alert.alert('System Error', 'Unable to synchronization payment preference');
         }
     };
-
 
     useEffect(() => {
         const socket = customerSocketService.getSocket();
@@ -175,45 +246,45 @@ export default function CustomerScreen({ route, navigation }) {
                 setAssignedTech(data.technician);
                 setEntranceOtp(data.arrivalOtp);
                 setRideStatus('ACCEPTED');
-                setStatusMessage('Technician is on the way!');
+                setStatusMessage('Expert technician assigned');
                 setOnlineTechnicians([]);
             });
 
             socket.on('ride:arrived', () => {
                 setRideStatus('ARRIVED');
-                setStatusMessage('Technician has arrived!');
+                setStatusMessage('Expert has arrived at location');
             });
 
             socket.on('ride:in_progress', () => {
                 setRideStatus('IN_PROGRESS');
-                setStatusMessage('Service in progress...');
+                setStatusMessage('Performance monitoring active');
             });
 
             socket.on('payment:method_updated', (data) => {
                 setPaymentMethod(data.paymentMethod);
-                Alert.alert('Payment Updated', `Payment method changed to ${data.paymentMethod}`);
             });
 
             socket.on('ride:service_ended', (data) => {
                 if (data.completionOtp) setMainOtp(data.completionOtp);
-                setStatusMessage('Service ended. Please provide OTP to complete.');
+                setStatusMessage('Awaiting final verification');
             });
 
             socket.on('payment:success', (data) => {
                 setMainOtp(data.completionOtp);
-                Alert.alert('Payment Successful', 'Payment confirmed! Please share the OTP with the technician.');
+                Alert.alert('Payment Secured', 'Transaction successful. Please share the final completion code.');
             });
 
             socket.on('ride:completed', () => {
-                console.log('🏁 Ride COMPLETED event received via socket');
                 setRideStatus('COMPLETED');
-                setStatusMessage('Service Completed!');
+                setStatusMessage('Service lifecycle completed');
+                setTimeout(() => navigation.navigate('Home'), 2500);
+            });
 
-                // Real-time: wait 2 seconds so user sees the "Completed" message, then auto-close
-                setTimeout(() => {
-                    console.log('🏠 Auto-navigating back to Home...');
-                    navigation.navigate('Home');
-                }, 2000);
+            socket.on('ride:cancelled', (data) => {
+                setRideStatus('CANCELLED');
+                setStatusMessage('Booking cancelled');
+                Alert.alert('Booking Cancelled', data.reason || 'The booking has been cancelled.');
+                setTimeout(() => navigation.navigate('Home'), 2500);
             });
 
             return () => {
@@ -244,74 +315,54 @@ export default function CustomerScreen({ route, navigation }) {
     };
 
     const handleLocationUpdate = (locationData) => {
-        console.log('🚨🚨🚨 [CUSTOMER] LOCATION RECEIVED:', JSON.stringify(locationData));
-
         const newLocation = {
             latitude: locationData.lat,
             longitude: locationData.lng,
             timestamp: locationData.timestamp || Date.now(),
         };
-
-        const speed = locationData.speed || 0;
-        const newStatusMsg = speed < 0.3 ? 'Technician is waiting nearby' : 'Technician is on the way';
-        setStatusMessage(newStatusMsg);
-
-        if (currentLocation) {
-            const latDiff = Math.abs(currentLocation.latitude - newLocation.latitude);
-            const lngDiff = Math.abs(currentLocation.longitude - newLocation.longitude);
-            console.log(`📍 [MOVE CHECK] LatDiff: ${latDiff.toFixed(6)}, LngDiff: ${lngDiff.toFixed(6)} | Speed: ${speed.toFixed(2)}`);
-            if (latDiff === 0 && lngDiff === 0) {
-                console.log('⚠️ [STATIONARY] Technician coordinates have not changed.');
-            } else {
-                console.log('✅ [MOVING] Technician has changed position!');
-            }
-        }
-
         setPreviousLocation(currentLocation);
         setCurrentLocation(newLocation);
         setBearing(locationData.bearing || 0);
     };
 
+    const getStatusTheme = () => {
+        switch (rideStatus) {
+            case 'COMPLETED': return { color: '#22c55e', label: 'Success' };
+            case 'ARRIVED': return { color: COLORS.indigo, label: 'Arrived' };
+            case 'IN_PROGRESS': return { color: '#f59e0b', label: 'Working' };
+            default: return { color: COLORS.slate, label: rideStatus || 'Processing' };
+        }
+    };
 
-
+    const statusTheme = getStatusTheme();
 
     return (
         <View style={styles.container}>
-            <StatusBar style="dark" />
+            <StatusBar barStyle="dark-content" />
 
             <MapView
                 ref={mapRef}
                 provider={PROVIDER_GOOGLE}
                 style={styles.map}
                 initialRegion={{
-                    latitude: pickupLocation?.latitude || 20.2605, // Updated to match Jagamara area or default
-                    longitude: pickupLocation?.longitude || 85.7922,
+                    latitude: pickupLocation?.latitude || 28.6139,
+                    longitude: pickupLocation?.longitude || 77.2090,
                     latitudeDelta: 0.05,
                     longitudeDelta: 0.05,
                 }}
-                showsUserLocation={false}
-                showsMyLocationButton={true}
-                zoomEnabled={true}
-                scrollEnabled={true}
-                pitchEnabled={false}
-                rotateEnabled={false}
-                customMapStyle={customerMapStyle}
+                customMapStyle={premiumTrackingMapStyle}
             >
-                {/* Show all online technicians when no one is assigned */}
-                {!assignedTech && onlineTechnicians.map((tech) => (
+                {!assignedTech && onlineTechnicians.map((tech) => (tech.location && (
                     <Marker
                         key={tech.id}
                         coordinate={{ latitude: tech.location.lat, longitude: tech.location.lng }}
-                        title={tech.name}
-                        description="Available Technician"
                     >
-                        <View style={styles.techMarker}>
-                            <Ionicons name="car" size={24} color={COLORS.technicianPrimary} />
+                        <View style={styles.miniTechMarker}>
+                            <Ionicons name="construct" size={12} color="#fff" />
                         </View>
                     </Marker>
-                ))}
+                )))}
 
-                {/* Show assigned technician's live location - UBER STYLE ANIMATED MARKER */}
                 {currentLocation && assignedTech && (
                     <AnimatedMarker
                         currentLocation={currentLocation}
@@ -321,443 +372,757 @@ export default function CustomerScreen({ route, navigation }) {
                 )}
 
                 {pickupLocation && (
-                    <Marker
-                        coordinate={{
-                            latitude: pickupLocation.latitude,
-                            longitude: pickupLocation.longitude
-                        }}
-                    >
-                        <View style={styles.destMarker}>
-                            <Ionicons name="location" size={24} color={COLORS.roseGold} />
+                    <Marker coordinate={{ latitude: pickupLocation.latitude, longitude: pickupLocation.longitude }}>
+                        <View style={styles.homeMarker}>
+                            <View style={styles.homeMarkerInner}>
+                                <Ionicons name="home" size={16} color="#fff" />
+                            </View>
+                            <View style={styles.homeMarkerBeard} />
                         </View>
                     </Marker>
                 )}
 
                 {currentLocation && pickupLocation && (
                     <MapViewDirections
-                        origin={{
-                            latitude: currentLocation.latitude,
-                            longitude: currentLocation.longitude
-                        }}
-                        destination={{
-                            latitude: pickupLocation.latitude,
-                            longitude: pickupLocation.longitude
-                        }}
+                        origin={{ latitude: currentLocation.latitude, longitude: currentLocation.longitude }}
+                        destination={{ latitude: pickupLocation.latitude, longitude: pickupLocation.longitude }}
                         apikey={config.GOOGLE_MAPS_API_KEY}
-                        strokeWidth={5}
-                        strokeColor={COLORS.roseGold}
+                        strokeWidth={4}
+                        strokeColor={COLORS.indigo}
                         precision="high"
                         mode="DRIVING"
-                        optimizeWaypoints={true}
                         onReady={(result) => {
-                            console.log('Route ready - Distance:', result.distance, 'Duration:', result.duration);
-                            // Fit to route only once on first load
                             if (mapRef.current && !mapRef.current.hasInitialFit) {
                                 mapRef.current.hasInitialFit = true;
                                 mapRef.current.fitToCoordinates(result.coordinates, {
-                                    edgePadding: { top: 150, right: 50, bottom: 250, left: 50 },
+                                    edgePadding: { top: 100, right: 60, bottom: 400, left: 60 },
                                     animated: true
                                 });
                             }
-                        }}
-                        onError={(error) => {
-                            console.error('❌ Route error:', error);
                         }}
                     />
                 )}
             </MapView>
 
-            <View style={styles.topBar}>
-                <View style={[styles.statusIndicator, { backgroundColor: connectionStatus === 'connected' ? COLORS.success : COLORS.warning }]} />
-                <Text style={styles.statusMsg}>{statusMessage}</Text>
-                {connectionStatus !== 'connected' && <ActivityIndicator size="small" color={COLORS.roseGold} style={{ marginLeft: 10 }} />}
+            <View style={styles.topOverlay}>
+                <View style={styles.statusPill}>
+                    <View style={[styles.statusDot, { backgroundColor: connectionStatus === 'connected' ? '#22c55e' : '#f59e0b' }]} />
+                    <Text style={styles.statusTopText}>{statusMessage}</Text>
+                    {connectionStatus !== 'connected' && <ActivityIndicator size="small" color={COLORS.indigo} style={{ marginLeft: 8 }} />}
+                </View>
+
+                {['REQUESTED', 'ACCEPTED', 'ARRIVED'].includes(rideStatus) && (
+                    <TouchableOpacity
+                        style={styles.cancelPill}
+                        onPress={() => setShowCancelModal(true)}
+                    >
+                        <Ionicons name="close-circle" size={16} color="#ef4444" />
+                        <Text style={styles.cancelText}>Cancel Booking</Text>
+                    </TouchableOpacity>
+                )}
             </View>
 
-            <View style={styles.bottomSheet}>
-                <View style={styles.sheetHeader}>
-                    <Text style={styles.rideIdText}>JOB ID: {rideId?.substring(4, 12).toUpperCase()}</Text>
-                    {entranceOtp && (rideStatus === 'ACCEPTED' || rideStatus === 'REQUESTED') && (
-                        <View style={styles.otpBadge}>
-                            <Text style={styles.otpLabel}>ENTRANCE OTP</Text>
-                            <Text style={styles.otpValue}>{entranceOtp}</Text>
+            <View style={styles.floatingControls}>
+                <TouchableOpacity
+                    style={styles.controlBtn}
+                    onPress={() => mapRef.current?.animateToRegion({
+                        latitude: currentLocation?.latitude || pickupLocation?.latitude,
+                        longitude: currentLocation?.longitude || pickupLocation?.longitude,
+                        latitudeDelta: 0.01,
+                        longitudeDelta: 0.01
+                    })}
+                >
+                    <Ionicons name="locate" size={24} color={COLORS.slate} />
+                </TouchableOpacity>
+            </View>
+
+            {/* Bottom Sheet UI */}
+            <PanGestureHandler
+                onGestureEvent={onGestureEvent}
+                onHandlerStateChange={onHandlerStateChange}
+            >
+                <Animated.View
+                    style={[
+                        styles.bottomCard,
+                        { transform: [{ translateY: translateY }] }
+                    ]}
+                >
+                    <TouchableOpacity
+                        style={styles.sheetHeader}
+                        activeOpacity={1}
+                        onPress={toggleBottomSheet}
+                    >
+                        <View style={styles.dragIndicator} />
+                    </TouchableOpacity>
+
+                    <View style={styles.cardHeader}>
+                        <View>
+                            <Text style={styles.jobLabel}>SERVICE REFERENCE</Text>
+                            <Text style={styles.jobIdValue}>#{rideId?.substring(rideId.length - 8).toUpperCase()}</Text>
+                        </View>
+                        <View style={[styles.statusBadge, { backgroundColor: statusTheme.color + '15' }]}>
+                            <Text style={[styles.statusBadgeText, { color: statusTheme.color }]}>{statusTheme.label}</Text>
+                        </View>
+                    </View>
+
+                    <View style={styles.expertRow}>
+                        <View style={styles.avatarContainer}>
+                            {assignedTech ? (
+                                <Ionicons name="person" size={28} color="#fff" />
+                            ) : (
+                                <ActivityIndicator color="#fff" />
+                            )}
+                        </View>
+                        <View style={styles.expertInfo}>
+                            <Text style={styles.expertName}>{assignedTech?.name || 'Searching for Expert...'}</Text>
+                            <View style={styles.ratingRow}>
+                                <Ionicons name="star" size={14} color="#f59e0b" />
+                                <Text style={styles.ratingValue}>{assignedTech?.rating || '4.9'}</Text>
+                                <Text style={styles.ratingTotal}>(120+ jobs)</Text>
+                            </View>
+                        </View>
+                        {assignedTech && (
+                            <TouchableOpacity
+                                style={styles.actionCircle}
+                                onPress={() => assignedTech.phone && Linking.openURL(`tel:${assignedTech.phone}`)}
+                            >
+                                <Ionicons name="call" size={20} color="#fff" />
+                            </TouchableOpacity>
+                        )}
+                    </View>
+
+                    {entranceOtp && (rideStatus === 'ACCEPTED' || rideStatus === 'STARTED') && (
+                        <View style={styles.otpSection}>
+                            <View style={styles.otpBox}>
+                                <Text style={styles.otpBoxLabel}>SECURITY ENTRANCE CODE</Text>
+                                <Text style={styles.otpBoxValue}>{entranceOtp}</Text>
+                            </View>
+                            <Text style={styles.otpHint}>Share this only when the expert reaches your door.</Text>
                         </View>
                     )}
-                </View>
 
-
-                <View style={styles.technicianCard}>
-                    <View style={styles.avatarContainer}>
-                        <Ionicons name="person" size={28} color={COLORS.white} />
-                    </View>
-                    <View style={styles.technicianDetails}>
-                        <Text style={styles.technicianName}>
-                            {assignedTech?.name || 'Professional Technician'}
-                        </Text>
-                        <View style={styles.techRatingRow}>
-                            <View style={styles.ratingBadge}>
-                                <Ionicons name="star" size={12} color={COLORS.warning} />
-                                <Text style={styles.ratingText}>{assignedTech?.rating || '4.5'}</Text>
+                    {mainOtp && (rideStatus === 'ARRIVED' || rideStatus === 'IN_PROGRESS' || rideStatus === 'COMPLETED') && (
+                        <View style={styles.otpSection}>
+                            <View style={[styles.otpBox, { backgroundColor: COLORS.indigo }]}>
+                                <Text style={[styles.otpBoxLabel, { color: 'rgba(255,255,255,0.7)' }]}>FINAL COMPLETION CODE</Text>
+                                <Text style={[styles.otpBoxValue, { color: '#fff' }]}>{mainOtp}</Text>
                             </View>
-                            <Text style={styles.techPhone}>{assignedTech?.phone || ''}</Text>
+                            <Text style={styles.otpHint}>Provide this to finalize the service and release payment.</Text>
                         </View>
-                        <View style={styles.badge}>
-                            <Text style={styles.badgeText}>{rideStatus || 'ALLOCATING'}</Text>
-                        </View>
-                    </View>
-                    <TouchableOpacity
-                        style={styles.callCircle}
-                        onPress={() => {
-                            if (assignedTech?.phone) {
-                                Linking.openURL(`tel:${assignedTech.phone}`);
-                            } else {
-                                Alert.alert('Not Available', 'Technician phone number not available yet');
-                            }
-                        }}
-                    >
-                        <Ionicons name="call" size={20} color={COLORS.white} />
-                    </TouchableOpacity>
-                </View>
+                    )}
 
-                {/* Service Completion OTP */}
-                {mainOtp && (
-                    <View style={styles.mainOtpContainer}>
-                        <Text style={styles.mainOtpTitle}>SERVICE COMPLETION OTP</Text>
-                        <Text style={styles.mainOtpCode}>{mainOtp}</Text>
-                        <Text style={styles.mainOtpHelper}>Share this with technician to finish the job</Text>
-                    </View>
-                )}
-
-                {/* Payment Method Section */}
-                <View style={styles.paymentRow}>
-                    <View style={styles.paymentInfo}>
-                        <Ionicons
-                            name={paymentMethod === 'COD' ? 'cash-outline' : 'card-outline'}
-                            size={20}
-                            color={COLORS.roseGold}
-                        />
-                        <Text style={styles.paymentLabel}>PAYMENT: {paymentMethod}</Text>
-                    </View>
-                    <TouchableOpacity
-                        style={styles.changeBtn}
-                        onPress={() => setShowPaymentModal(true)}
-                    >
-                        <Text style={styles.changeBtnText}>CHANGE</Text>
-                    </TouchableOpacity>
-                </View>
-
-                <View style={styles.locationContainer}>
-                    <View style={styles.dotLine}>
-                        <View style={[styles.dot, { backgroundColor: COLORS.roseGold }]} />
-                        <View style={styles.line} />
-                    </View>
-                    <View style={styles.locationInfo}>
-                        <Text style={styles.locationLabel}>SERVICE LOCATION</Text>
-                        <Text style={styles.addressText} numberOfLines={1}>
-                            {pickupLocation?.address || 'Detecting address...'}
-                        </Text>
-                    </View>
-                </View>
-
-                {rideStatus === 'COMPLETED' && (
-                    <TouchableOpacity
-                        style={styles.doneBtn}
-                        onPress={() => navigation.navigate('Home')}
-                    >
-                        <Text style={styles.doneBtnText}>BACK TO HOME</Text>
-                    </TouchableOpacity>
-                )}
-
-                {/* Payment Change Modal */}
-                <Modal
-                    visible={showPaymentModal}
-                    transparent={true}
-                    animationType="slide"
-                >
-                    <View style={styles.modalOverlay}>
-                        <View style={styles.modalContent}>
-                            <Text style={styles.modalTitle}>Choose Payment Method</Text>
-
-                            <TouchableOpacity
-                                style={[styles.methodOption, paymentMethod === 'COD' && styles.methodSelected]}
-                                onPress={() => handlePaymentChange('COD')}
+                    {/* Post-Service Payment Button */}
+                    {rideStatus === 'COMPLETED' && paymentStatus !== 'PAID' && paymentTiming === 'POSTPAID' && (
+                        <TouchableOpacity
+                            style={styles.payNowBtn}
+                            onPress={() => navigation.navigate('CustomerRazorpayCheckout', {
+                                rideId: rideId,
+                                amount: 1000, // This should come from ride.price
+                                paymentTiming: 'POSTPAID'
+                            })}
+                        >
+                            <LinearGradient
+                                colors={['#22c55e', '#15803d']}
+                                style={styles.doneFullGradient}
                             >
-                                <Ionicons name="cash" size={24} color={paymentMethod === 'COD' ? COLORS.white : COLORS.roseGold} />
-                                <Text style={[styles.methodText, paymentMethod === 'COD' && styles.methodTextSelected]}>Cash on Service</Text>
-                            </TouchableOpacity>
+                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                                    <Ionicons name="card" size={20} color="#fff" />
+                                    <Text style={styles.doneFullText}>Pay & Get Completion Code</Text>
+                                </View>
+                            </LinearGradient>
+                        </TouchableOpacity>
+                    )}
 
-                            <TouchableOpacity
-                                style={[styles.methodOption, paymentMethod === 'ONLINE' && styles.methodSelected]}
-                                onPress={() => handlePaymentChange('ONLINE')}
-                            >
-                                <Ionicons name="card" size={24} color={paymentMethod === 'ONLINE' ? COLORS.white : COLORS.roseGold} />
-                                <Text style={[styles.methodText, paymentMethod === 'ONLINE' && styles.methodTextSelected]}>Pay Online</Text>
-                            </TouchableOpacity>
+                    <View style={styles.footerInfo}>
+                        <TouchableOpacity
+                            style={[
+                                styles.paymentSelector,
+                                (paymentStatus === 'PAID' || paymentTiming === 'PREPAID') && styles.paymentLocked
+                            ]}
+                            onPress={() => paymentStatus !== 'PAID' && setShowPaymentModal(true)}
+                            disabled={paymentStatus === 'PAID'}
+                        >
+                            <View style={styles.paymentIconBox}>
+                                <Ionicons name={paymentMethod === 'COD' ? 'cash' : 'card'} size={18} color={COLORS.indigo} />
+                            </View>
+                            <View style={{ flex: 1 }}>
+                                <Text style={styles.paymentTitle}>Payment Method</Text>
+                                <Text style={styles.paymentValue}>
+                                    {paymentMethod === 'COD' ? 'Cash on Delivery' : 'Online Payment'}
+                                    {paymentStatus === 'PAID' && " (Paid)"}
+                                </Text>
+                            </View>
+                            {paymentStatus === 'PAID' ? (
+                                <View style={styles.paidBadge}>
+                                    <Ionicons name="checkmark-done" size={14} color="#22c55e" />
+                                    <Text style={styles.paidBadgeText}>SUCCESS</Text>
+                                </View>
+                            ) : (
+                                <Ionicons name="chevron-forward" size={16} color={COLORS.textMuted} />
+                            )}
+                        </TouchableOpacity>
 
-                            <TouchableOpacity
-                                style={styles.closeBtn}
-                                onPress={() => setShowPaymentModal(false)}
-                            >
-                                <Text style={styles.closeBtnText}>CANCEL</Text>
-                            </TouchableOpacity>
+                        <View style={styles.locationSummary}>
+                            <Ionicons name="navigate-circle" size={20} color={COLORS.indigo} />
+                            <Text style={styles.locationSummaryText} numberOfLines={1}>
+                                {pickupLocation?.address || 'Determining location...'}
+                            </Text>
                         </View>
                     </View>
-                </Modal>
-            </View>
-        </View>
+
+                    {rideStatus === 'COMPLETED' && (
+                        <TouchableOpacity
+                            style={styles.doneFullBtn}
+                            onPress={() => navigation.navigate('Home')}
+                        >
+                            <LinearGradient
+                                colors={[COLORS.indigo, '#3730a3']}
+                                style={styles.doneFullGradient}
+                            >
+                                <Text style={styles.doneFullText}>Return to Dashboard</Text>
+                            </LinearGradient>
+                        </TouchableOpacity>
+                    )}
+                </Animated.View>
+            </PanGestureHandler>
+
+            <Modal visible={showPaymentModal} transparent animationType="slide">
+                <View style={styles.modalBackdrop}>
+                    <View style={styles.modalSheet}>
+                        <View style={styles.dragIndicator} />
+                        <Text style={styles.modalTitle}>Change Payment Method</Text>
+
+                        <TouchableOpacity
+                            style={[styles.methodItem, paymentMethod === 'COD' && styles.methodItemActive]}
+                            onPress={() => handlePaymentChange('COD')}
+                        >
+                            <View style={[styles.methodIcon, paymentMethod === 'COD' && { backgroundColor: '#fff' }]}>
+                                <Ionicons name="cash" size={24} color={paymentMethod === 'COD' ? COLORS.indigo : COLORS.slate} />
+                            </View>
+                            <Text style={[styles.methodName, paymentMethod === 'COD' && { color: '#fff' }]}>Pay After Service (Cash)</Text>
+                            {paymentMethod === 'COD' && <Ionicons name="checkmark-circle" size={24} color="#fff" />}
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                            style={[styles.methodItem, paymentMethod === 'ONLINE' && styles.methodItemActive]}
+                            onPress={() => handlePaymentChange('ONLINE')}
+                        >
+                            <View style={[styles.methodIcon, paymentMethod === 'ONLINE' && { backgroundColor: '#fff' }]}>
+                                <Ionicons name="card" size={24} color={paymentMethod === 'ONLINE' ? COLORS.indigo : COLORS.slate} />
+                            </View>
+                            <Text style={[styles.methodName, paymentMethod === 'ONLINE' && { color: '#fff' }]}>Pay Now (Netbanking/UPI)</Text>
+                            {paymentMethod === 'ONLINE' && <Ionicons name="checkmark-circle" size={24} color="#fff" />}
+                        </TouchableOpacity>
+
+                        <TouchableOpacity style={styles.modalClose} onPress={() => setShowPaymentModal(false)}>
+                            <Text style={styles.modalCloseText}>Dismiss</Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            </Modal>
+
+            {/* Cancellation Modal */}
+            <Modal visible={showCancelModal} transparent animationType="slide">
+                <View style={styles.modalBackdrop}>
+                    <View style={styles.modalSheet}>
+                        <View style={styles.dragIndicator} />
+                        <Text style={styles.modalTitle}>Cancel Service Booking?</Text>
+                        <Text style={styles.modalSubTitle}>Please select a reason for cancellation:</Text>
+
+                        <RNScrollView style={styles.reasonsList} showsVerticalScrollIndicator={false}>
+                            {CANCEL_REASONS.map((reason, index) => (
+                                <TouchableOpacity
+                                    key={index}
+                                    style={[styles.reasonItem, cancelReason === reason && styles.reasonItemActive]}
+                                    onPress={() => setCancelReason(reason)}
+                                >
+                                    <View style={styles.reasonRadio}>
+                                        {cancelReason === reason && <View style={styles.reasonRadioInner} />}
+                                    </View>
+                                    <Text style={[styles.reasonText, cancelReason === reason && styles.reasonTextActive]}>
+                                        {reason}
+                                    </Text>
+                                </TouchableOpacity>
+                            ))}
+                        </RNScrollView>
+
+                        <View style={styles.modalFooter}>
+                            <TouchableOpacity
+                                style={styles.cancelConfirmBtn}
+                                onPress={() => handleCancelRide(cancelReason)}
+                                disabled={!cancelReason}
+                            >
+                                <Text style={styles.cancelConfirmText}>Confirm Cancellation</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={styles.modalDismissBtn}
+                                onPress={() => setShowCancelModal(false)}
+                            >
+                                <Text style={styles.modalDismissText}>Keep Booking</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+            </Modal>
+        </View >
     );
 }
 
-const customerMapStyle = [
-    { "elementType": "geometry", "stylers": [{ "color": "#fdf8f8" }] },
-    { "elementType": "labels.text.fill", "stylers": [{ "color": "#b76e79" }] },
-    { "featureType": "water", "elementType": "geometry", "stylers": [{ "color": "#e3f2fd" }] },
-    { "featureType": "road", "elementType": "geometry", "stylers": [{ "color": "#ffffff" }] },
+const premiumTrackingMapStyle = [
+    { "featureType": "all", "elementType": "labels.text.fill", "stylers": [{ "color": "#7c9b96" }] },
+    { "featureType": "all", "elementType": "labels.text.stroke", "stylers": [{ "visibility": "on" }, { "color": "#000000" }, { "lightness": 16 }] },
+    { "featureType": "administrative", "elementType": "geometry.fill", "stylers": [{ "color": "#000000" }, { "lightness": 20 }] },
+    { "featureType": "administrative", "elementType": "geometry.stroke", "stylers": [{ "color": "#000000" }, { "lightness": 17 }, { "weight": 1.2 }] },
+    { "featureType": "landscape", "elementType": "geometry", "stylers": [{ "color": "#000000" }, { "lightness": 20 }] },
+    { "featureType": "poi", "elementType": "geometry", "stylers": [{ "color": "#000000" }, { "lightness": 21 }] },
+    { "featureType": "road.highway", "elementType": "geometry.fill", "stylers": [{ "color": "#000000" }, { "lightness": 17 }] },
+    { "featureType": "road.highway", "elementType": "geometry.stroke", "stylers": [{ "color": "#000000" }, { "lightness": 29 }, { "weight": 0.2 }] },
+    { "featureType": "road.arterial", "elementType": "geometry", "stylers": [{ "color": "#000000" }, { "lightness": 18 }] },
+    { "featureType": "road.local", "elementType": "geometry", "stylers": [{ "color": "#000000" }, { "lightness": 16 }] },
+    { "featureType": "transit", "elementType": "geometry", "stylers": [{ "color": "#000000" }, { "lightness": 19 }] },
+    { "featureType": "water", "elementType": "geometry", "stylers": [{ "color": "#0f172a" }] }
 ];
 
 const styles = StyleSheet.create({
-    container: { flex: 1, backgroundColor: COLORS.background },
+    container: { flex: 1, backgroundColor: '#000' },
     map: { flex: 1 },
-    destMarker: {
-        backgroundColor: COLORS.white,
-        padding: SPACING.xs,
-        borderRadius: 20,
-        ...SHADOWS.medium,
-        borderWidth: 1.5,
-        borderColor: COLORS.roseGold,
-    },
-    techMarker: {
-        backgroundColor: COLORS.technicianBg,
-        padding: SPACING.xs,
-        borderRadius: 20,
-        ...SHADOWS.medium,
-        borderWidth: 1.5,
-        borderColor: COLORS.technicianPrimary,
-    },
-
-    topBar: {
-        position: 'absolute',
-        top: Platform.OS === 'ios' ? 60 : 40,
-        left: 20,
-        right: 20,
-        backgroundColor: COLORS.white,
-        padding: SPACING.md,
-        borderRadius: 20,
-        flexDirection: 'row',
-        alignItems: 'center',
-        ...SHADOWS.medium,
-    },
-    statusIndicator: { width: 10, height: 10, borderRadius: 5, marginRight: 12 },
-    statusMsg: { fontSize: 13, fontWeight: '700', color: COLORS.black, letterSpacing: 0.5 },
-    bottomSheet: {
-        backgroundColor: COLORS.white,
-        padding: SPACING.lg,
-        borderTopLeftRadius: 36,
-        borderTopRightRadius: 36,
-        ...SHADOWS.medium,
-        marginTop: -32,
-    },
-    rideIdText: {
-        fontSize: 10,
-        color: COLORS.grey,
-        fontWeight: 'bold',
-        letterSpacing: 1,
-    },
-    sheetHeader: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginBottom: SPACING.md,
-    },
-    otpBadge: {
-        backgroundColor: COLORS.technicianBg,
-        paddingHorizontal: SPACING.sm,
-        paddingVertical: 4,
-        borderRadius: 8,
-        alignItems: 'center',
-    },
-    otpLabel: {
-        fontSize: 8,
-        color: COLORS.technicianPrimary,
-        fontWeight: 'bold',
-    },
-    otpValue: {
-        fontSize: 14,
-        color: COLORS.technicianPrimary,
-        fontWeight: '900',
-        letterSpacing: 2,
-    },
-    mainOtpContainer: {
-        backgroundColor: '#F8F9FA',
-        padding: SPACING.md,
-        borderRadius: 16,
-        alignItems: 'center',
-        marginVertical: SPACING.sm,
-        borderWidth: 1,
-        borderColor: '#EEE',
-    },
-    mainOtpTitle: {
-        fontSize: 10,
-        color: COLORS.grey,
-        fontWeight: 'bold',
-        marginBottom: 4,
-    },
-    mainOtpCode: {
-        fontSize: 28,
-        color: COLORS.black,
-        fontWeight: '900',
-        letterSpacing: 8,
-    },
-    mainOtpHelper: {
-        fontSize: 10,
-        color: COLORS.grey,
-        marginTop: 4,
-    },
-    paymentRow: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        paddingVertical: SPACING.sm,
-        borderBottomWidth: 1,
-        borderBottomColor: '#F0F0F0',
-        marginBottom: SPACING.sm,
-    },
-    paymentInfo: {
-        flexDirection: 'row',
-        alignItems: 'center',
-    },
-    paymentLabel: {
-        fontSize: 12,
-        fontWeight: '700',
-        color: COLORS.black,
-        marginLeft: 8,
-    },
-    changeBtn: {
-        backgroundColor: COLORS.roseGold + '15',
-        paddingHorizontal: 12,
-        paddingVertical: 6,
+    miniTechMarker: {
+        width: 24,
+        height: 24,
         borderRadius: 12,
-    },
-    changeBtnText: {
-        fontSize: 10,
-        fontWeight: 'bold',
-        color: COLORS.roseGold,
-    },
-    modalOverlay: {
-        flex: 1,
-        backgroundColor: 'rgba(0,0,0,0.5)',
-        justifyContent: 'flex-end',
-    },
-    modalContent: {
-        backgroundColor: COLORS.white,
-        padding: SPACING.xl,
-        borderTopLeftRadius: 32,
-        borderTopRightRadius: 32,
-    },
-    modalTitle: {
-        fontSize: 18,
-        fontWeight: 'bold',
-        color: COLORS.black,
-        marginBottom: SPACING.xl,
-        textAlign: 'center',
-    },
-    methodOption: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        padding: SPACING.lg,
-        borderRadius: 16,
-        backgroundColor: '#F8F9FA',
-        marginBottom: SPACING.md,
-    },
-    methodSelected: {
-        backgroundColor: COLORS.roseGold,
-    },
-    methodText: {
-        fontSize: 16,
-        fontWeight: '600',
-        color: COLORS.black,
-        marginLeft: SPACING.md,
-    },
-    methodTextSelected: {
-        color: COLORS.white,
-    },
-    closeBtn: {
-        marginTop: SPACING.md,
-        padding: SPACING.md,
-        alignItems: 'center',
-    },
-    closeBtnText: {
-        fontSize: 14,
-        fontWeight: 'bold',
-        color: COLORS.grey,
-    },
-    technicianCard: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginBottom: SPACING.xl,
-        backgroundColor: COLORS.background,
-        padding: SPACING.md,
-        borderRadius: 24,
-    },
-    avatarContainer: {
-        width: 56,
-        height: 56,
-        borderRadius: 28,
-        backgroundColor: COLORS.roseGold,
-        alignItems: 'center',
-        justifyContent: 'center'
-    },
-    technicianDetails: { flex: 1, marginLeft: SPACING.md },
-    technicianName: { fontSize: 18, fontWeight: 'bold', color: COLORS.black, marginBottom: 4 },
-    badge: {
-        backgroundColor: COLORS.roseGoldLight,
-        paddingHorizontal: 10,
-        paddingVertical: 2,
-        borderRadius: 12,
-        alignSelf: 'flex-start'
-    },
-    badgeText: { fontSize: 9, fontWeight: '800', color: COLORS.roseGold, textTransform: 'uppercase' },
-    techRatingRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
-    ratingBadge: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: '#FFF8E1',
-        paddingHorizontal: 6,
-        paddingVertical: 2,
-        borderRadius: 6,
-        marginRight: 8,
-    },
-    ratingText: { fontSize: 12, fontWeight: 'bold', color: COLORS.warning, marginLeft: 2 },
-    techPhone: { fontSize: 12, color: COLORS.grey, fontWeight: '500' },
-    callCircle: {
-        width: 44,
-        height: 44,
-        borderRadius: 22,
-        backgroundColor: COLORS.roseGold,
-        alignItems: 'center',
-        justifyContent: 'center'
-    },
-    locationContainer: { flexDirection: 'row', alignItems: 'flex-start', paddingHorizontal: SPACING.sm },
-    dotLine: { alignItems: 'center', marginRight: SPACING.md, paddingTop: 6 },
-    dot: { width: 8, height: 8, borderRadius: 4 },
-    line: { width: 2, height: 20, backgroundColor: COLORS.greyLight, marginTop: 4 },
-    locationInfo: { flex: 1 },
-    locationLabel: { fontSize: 10, fontWeight: '800', color: COLORS.grey, marginBottom: 2 },
-    addressText: { fontSize: 14, color: COLORS.black, fontWeight: '500' },
-    doneBtn: {
-        backgroundColor: COLORS.roseGold,
-        height: 56,
-        borderRadius: 20,
-        alignItems: 'center',
+        backgroundColor: COLORS.indigo,
+        borderWidth: 2,
+        borderColor: '#fff',
         justifyContent: 'center',
-        marginTop: SPACING.lg,
-        ...SHADOWS.light,
+        alignItems: 'center',
+        ...SHADOWS.small
     },
-    doneBtnText: { color: COLORS.white, fontSize: 15, fontWeight: 'bold', letterSpacing: 1 },
-    technicianMarker: {
+    homeMarker: { alignItems: 'center' },
+    homeMarkerInner: {
+        width: 36,
+        height: 36,
+        borderRadius: 12,
+        backgroundColor: COLORS.indigo,
+        justifyContent: 'center',
+        alignItems: 'center',
+        borderWidth: 2,
+        borderColor: '#fff',
+        ...SHADOWS.medium
+    },
+    homeMarkerBeard: {
+        width: 2,
+        height: 10,
+        backgroundColor: '#fff',
+    },
+    topOverlay: {
+        position: 'absolute',
+        top: Platform.OS === 'ios' ? 54 : 40,
+        width: '100%',
+        alignItems: 'center',
+        paddingHorizontal: 20
+    },
+    statusPill: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: 'rgba(255,255,255,0.95)',
+        paddingHorizontal: 20,
+        paddingVertical: 14,
+        borderRadius: 30,
+        ...SHADOWS.medium,
+        width: '100%',
+        borderWidth: 1,
+        borderColor: 'rgba(0,0,0,0.05)'
+    },
+    statusDot: {
+        width: 8,
+        height: 8,
+        borderRadius: 4,
+        marginRight: 12
+    },
+    statusTopText: {
+        fontSize: 14,
+        fontWeight: '700',
+        color: COLORS.slate,
+        flex: 1
+    },
+    floatingControls: {
+        position: 'absolute',
+        top: 130,
+        right: 20,
+        gap: 12
+    },
+    controlBtn: {
         width: 48,
         height: 48,
+        borderRadius: 12,
+        backgroundColor: 'rgba(255,255,255,0.9)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        ...SHADOWS.small
+    },
+    bottomCard: {
+        position: 'absolute',
+        bottom: 0,
+        left: 0,
+        right: 0,
+        backgroundColor: '#fff',
+        borderTopLeftRadius: 32,
+        borderTopRightRadius: 32,
+        padding: 24,
+        paddingTop: 12, // Reduced for handle
+        paddingBottom: Platform.OS === 'ios' ? 44 : 24,
+        ...SHADOWS.heavy,
+        zIndex: 100,
+        minHeight: 450,
+    },
+    sheetHeader: {
+        width: '100%',
+        height: 30,
         alignItems: 'center',
         justifyContent: 'center',
+    },
+    dragIndicator: {
+        width: 44,
+        height: 5,
+        backgroundColor: '#e2e8f0',
+        borderRadius: 3,
+    },
+    cardHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'flex-start',
+        marginBottom: 24
+    },
+    jobLabel: {
+        fontSize: 10,
+        fontWeight: '800',
+        color: COLORS.textMuted,
+        letterSpacing: 1.5,
+        marginBottom: 4
+    },
+    jobIdValue: {
+        fontSize: 18,
+        fontWeight: '900',
+        color: COLORS.slate
+    },
+    statusBadge: {
+        paddingHorizontal: 16,
+        paddingVertical: 8,
+        borderRadius: 12
+    },
+    statusBadgeText: {
+        fontSize: 12,
+        fontWeight: '900',
+        textTransform: 'uppercase'
+    },
+    expertRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#f8fafc',
+        padding: 16,
+        borderRadius: 24,
+        borderWidth: 1,
+        borderColor: '#f1f5f9',
+        marginBottom: 20
+    },
+    avatarContainer: {
+        width: 60,
+        height: 60,
+        borderRadius: 20,
+        backgroundColor: COLORS.indigo,
+        justifyContent: 'center',
+        alignItems: 'center'
+    },
+    expertInfo: {
+        flex: 1,
+        marginLeft: 16
+    },
+    expertName: {
+        fontSize: 17,
+        fontWeight: '800',
+        color: COLORS.slate,
+        marginBottom: 6
+    },
+    ratingRow: {
+        flexDirection: 'row',
+        alignItems: 'center'
+    },
+    ratingValue: {
+        fontSize: 14,
+        fontWeight: '700',
+        color: COLORS.slate,
+        marginLeft: 4
+    },
+    ratingTotal: {
+        fontSize: 13,
+        color: COLORS.textMuted,
+        marginLeft: 6
+    },
+    actionCircle: {
+        width: 48,
+        height: 48,
+        borderRadius: 16,
+        backgroundColor: COLORS.slate,
+        justifyContent: 'center',
+        alignItems: 'center',
+        ...SHADOWS.small
+    },
+    otpSection: {
+        marginBottom: 24
+    },
+    otpBox: {
+        backgroundColor: '#f1f5f9',
+        borderRadius: 20,
+        padding: 16,
+        alignItems: 'center',
+        borderWidth: 1,
+        borderColor: '#e2e8f0'
+    },
+    otpBoxLabel: {
+        fontSize: 10,
+        fontWeight: '800',
+        color: COLORS.textMuted,
+        letterSpacing: 2,
+        marginBottom: 8
+    },
+    otpBoxValue: {
+        fontSize: 32,
+        fontWeight: '900',
+        color: COLORS.slate,
+        letterSpacing: 10
+    },
+    otpHint: {
+        fontSize: 12,
+        color: COLORS.textMuted,
+        textAlign: 'center',
+        marginTop: 10,
+        lineHeight: 18
+    },
+    footerInfo: {
+        gap: 16
+    },
+    paymentSelector: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#fff',
+        padding: 12,
+        borderRadius: 16,
+        borderWidth: 1,
+        borderColor: '#f1f5f9'
+    },
+    paymentIconBox: {
+        width: 40,
+        height: 40,
+        borderRadius: 12,
+        backgroundColor: '#f1f5f9',
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginRight: 14
+    },
+    paymentTitle: {
+        fontSize: 11,
+        fontWeight: '700',
+        color: COLORS.textMuted,
+        marginBottom: 2
+    },
+    paymentValue: {
+        fontSize: 14,
+        fontWeight: '800',
+        color: COLORS.slate
+    },
+    locationSummary: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 10,
+        paddingHorizontal: 4
+    },
+    locationSummaryText: {
+        fontSize: 13,
+        color: COLORS.textMuted,
+        fontWeight: '500',
+        flex: 1
+    },
+    doneFullBtn: {
+        marginTop: 24,
+        height: 60,
+        borderRadius: 20,
+        overflow: 'hidden',
+        ...SHADOWS.medium
+    },
+    doneFullGradient: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center'
+    },
+    doneFullText: {
+        color: '#fff',
+        fontSize: 17,
+        fontWeight: '800'
+    },
+    payNowBtn: {
+        marginTop: 12,
+        height: 60,
+        borderRadius: 20,
+        overflow: 'hidden',
+        ...SHADOWS.medium
+    },
+    modalBackdrop: {
+        flex: 1,
+        backgroundColor: 'rgba(15, 23, 42, 0.6)',
+        justifyContent: 'flex-end'
+    },
+    modalSheet: {
+        backgroundColor: '#fff',
+        borderTopLeftRadius: 32,
+        borderTopRightRadius: 32,
+        padding: 24,
+        paddingBottom: Platform.OS === 'ios' ? 48 : 32
+    },
+    modalTitle: {
+        fontSize: 20,
+        fontWeight: '900',
+        color: COLORS.slate,
+        textAlign: 'center',
+        marginBottom: 24
+    },
+    methodItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        padding: 20,
+        borderRadius: 24,
+        backgroundColor: '#f8fafc',
+        marginBottom: 16,
+        borderWidth: 1.5,
+        borderColor: '#f1f5f9'
+    },
+    methodItemActive: {
+        backgroundColor: COLORS.indigo,
+        borderColor: COLORS.indigo,
+        ...SHADOWS.medium
+    },
+    methodIcon: {
+        width: 44,
+        height: 44,
+        borderRadius: 14,
+        backgroundColor: '#f1f5f9',
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginRight: 16
+    },
+    cancelPill: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: 'rgba(255, 255, 255, 0.9)',
+        paddingHorizontal: 16,
+        paddingVertical: 8,
+        borderRadius: 20,
+        marginTop: 12,
+        ...SHADOWS.small,
+        borderWidth: 1,
+        borderColor: '#fee2e2'
+    },
+    cancelText: {
+        fontSize: 12,
+        fontWeight: '700',
+        color: '#ef4444',
+        marginLeft: 6
+    },
+    paymentLocked: {
+        backgroundColor: '#f8fafc',
+        borderColor: '#e2e8f0'
+    },
+    paidBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#f0fdf4',
+        paddingHorizontal: 10,
+        paddingVertical: 4,
+        borderRadius: 8,
+        borderWidth: 1,
+        borderColor: '#dcfce7'
+    },
+    paidBadgeText: {
+        fontSize: 10,
+        fontWeight: '900',
+        color: '#22c55e',
+        marginLeft: 4
+    },
+    modalSubTitle: {
+        fontSize: 14,
+        color: COLORS.textMuted,
+        textAlign: 'center',
+        marginBottom: 20
+    },
+    reasonsList: {
+        maxHeight: 300,
+        marginBottom: 20
+    },
+    reasonItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        padding: 16,
+        borderRadius: 16,
+        backgroundColor: '#f8fafc',
+        marginBottom: 8,
+        borderWidth: 1,
+        borderColor: '#f1f5f9'
+    },
+    reasonItemActive: {
+        borderColor: COLORS.indigo,
+        backgroundColor: '#eef2ff'
+    },
+    reasonRadio: {
+        width: 20,
+        height: 20,
+        borderRadius: 10,
+        borderWidth: 2,
+        borderColor: '#cbd5e1',
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginRight: 12
+    },
+    reasonRadioInner: {
+        width: 10,
+        height: 10,
+        borderRadius: 5,
+        backgroundColor: COLORS.indigo
+    },
+    reasonText: {
+        fontSize: 14,
+        color: COLORS.slate,
+        fontWeight: '600'
+    },
+    reasonTextActive: {
+        color: COLORS.indigo,
+        fontWeight: '700'
+    },
+    modalFooter: {
+        gap: 12
+    },
+    cancelConfirmBtn: {
+        height: 56,
+        backgroundColor: '#ef4444',
+        borderRadius: 16,
+        justifyContent: 'center',
+        alignItems: 'center',
+        ...SHADOWS.small
+    },
+    cancelConfirmText: {
+        color: '#fff',
+        fontSize: 16,
+        fontWeight: '800'
+    },
+    modalDismissBtn: {
+        height: 56,
+        backgroundColor: '#f1f5f9',
+        borderRadius: 16,
+        justifyContent: 'center',
+        alignItems: 'center'
+    },
+    modalDismissText: {
+        color: COLORS.slate,
+        fontSize: 15,
+        fontWeight: '700'
     },
     technicianDot: {
         width: 20,

@@ -31,17 +31,24 @@ export default function TechnicianDashboardScreen({ navigation }) {
     const [showServicesSheet, setShowServicesSheet] = useState(false);
 
     useEffect(() => {
-        loadUser();
-        loadDashboardData();
+        const initDashboard = async () => {
+            const userData = await authService.getUser();
+            setUser(userData);
+            const userId = userData?.id || userData?._id;
+
+            // Connect to socket for job notifications with userId for private rooms
+            technicianSocketService.connect(userId, handleJobRequest, handleJobCancelled, handleSocketConnection);
+
+            loadDashboardData();
+        };
+
+        initDashboard();
 
         // Refresh data when screen comes into focus
         const unsubscribe = navigation.addListener('focus', () => {
             console.log('🔄 Dashboard focused - refreshing data...');
             loadDashboardData();
         });
-
-        // Connect to socket for job notifications
-        technicianSocketService.connect(handleJobRequest, handleSocketConnection);
 
         return () => {
             unsubscribe();
@@ -52,6 +59,27 @@ export default function TechnicianDashboardScreen({ navigation }) {
     const handleSocketConnection = (status) => {
         console.log('Socket status:', status);
         setSocketConnected(status === 'connected');
+    };
+
+    const handleJobCancelled = (data) => {
+        console.log('❌ Job cancelled handler:', data);
+
+        // If the pending job in the modal is cancelled
+        if (pendingJob && pendingJob.rideId === data.rideId) {
+            setShowJobModal(false);
+            setPendingJob(null);
+            Alert.alert('Job Cancelled', 'The customer has cancelled this job request.');
+        }
+
+        // If the active job is cancelled
+        if (activeJob && activeJob.rideId === data.rideId) {
+            setActiveJob(null);
+            loadDashboardData();
+            Alert.alert('Active Job Cancelled', 'Your current job has been cancelled by the customer.');
+        }
+
+        // Always refresh the dashboard data to ensure consistency
+        loadDashboardData();
     };
 
     const handleJobRequest = (jobData) => {

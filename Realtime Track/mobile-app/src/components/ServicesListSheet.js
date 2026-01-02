@@ -197,20 +197,24 @@ export default function ServicesListSheet({ visible, onClose, technicianId, onAc
                     </ScrollView>
 
                     {/* Jobs List */}
-                    <FlatList
-                        data={jobs[activeTab]}
-                        renderItem={renderJobItem}
-                        keyExtractor={(item, index) => item.rideId || index.toString()}
-                        contentContainerStyle={styles.listContent}
-                        ListEmptyComponent={
+                    <ScrollView
+                        style={styles.listContent}
+                        showsVerticalScrollIndicator={false}
+                    >
+                        {jobs[activeTab] && jobs[activeTab].length > 0 ? (
+                            jobs[activeTab].map((item, index) => (
+                                <React.Fragment key={item._id || item.id || item.rideId || index.toString()}>
+                                    {renderJobItem({ item })}
+                                </React.Fragment>
+                            ))
+                        ) : (
                             <View style={styles.emptyContainer}>
                                 <Ionicons name="briefcase-outline" size={60} color={COLORS.greyLight} />
                                 <Text style={styles.emptyText}>No {activeTab} jobs</Text>
                             </View>
-                        }
-                        refreshing={loading}
-                        onRefresh={fetchJobs}
-                    />
+                        )}
+                        <View style={{ height: 40 }} />
+                    </ScrollView>
                 </View>
             </View>
         </Modal>

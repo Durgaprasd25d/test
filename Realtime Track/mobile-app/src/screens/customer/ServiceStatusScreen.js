@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Animated, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Animated, Dimensions, StatusBar, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { StatusBar } from 'expo-status-bar';
+import { LinearGradient } from 'expo-linear-gradient';
 import { COLORS, SPACING, SHADOWS } from '../../constants/theme';
 import customerSocketService from '../../services/customerSocketService';
 
@@ -17,25 +17,19 @@ export default function ServiceStatusScreen({ route, navigation }) {
     useEffect(() => {
         const socket = customerSocketService.getSocket();
         if (socket) {
-            // Listen for service ended event
             socket.on('ride:service_ended', (data) => {
-                console.log('🔔 Service ended event received:', data);
                 if (data.price) {
-                    setServiceAmount(data.price); // Update amount from backend
+                    setServiceAmount(data.price);
                 }
                 if (data.paymentTiming === 'POSTPAID' && data.paymentMethod === 'ONLINE') {
-                    // Show payment button for postpaid bookings
                     setStep('service_ended');
                     setShowPayButton(true);
                 } else if (data.paymentTiming === 'PREPAID') {
-                    // For prepaid, service is complete, no payment needed
                     setStep('completed');
                 }
             });
 
-            // Listen for payment success
             socket.on('payment:success', () => {
-                console.log('💰 Payment successful');
                 setShowPayButton(false);
                 setStep('completed');
             });
@@ -55,38 +49,66 @@ export default function ServiceStatusScreen({ route, navigation }) {
     }, []);
 
     const renderInProgress = () => (
-        <View style={styles.center}>
+        <View style={styles.centerContainer}>
             <View style={styles.otpCard}>
-                <Text style={styles.otpLabel}>SHARE OTP WITH TECHNICIAN</Text>
-                <Text style={styles.otpCode}>{otp}</Text>
-                <Text style={styles.otpDesc}>This ensures that the service is being performed by the right person.</Text>
+                <LinearGradient
+                    colors={['rgba(79, 70, 229, 0.05)', 'rgba(79, 70, 229, 0.02)']}
+                    style={styles.otpGradient}
+                >
+                    <Text style={styles.otpLabel}>SHARE OTP WITH TECHNICIAN</Text>
+                    <View style={styles.otpNumberContainer}>
+                        {otp?.toString().split('').map((char, i) => (
+                            <View key={i} style={styles.otpDigitBox}>
+                                <Text style={styles.otpDigitText}>{char}</Text>
+                            </View>
+                        ))}
+                    </View>
+                    <Text style={styles.otpDesc}>Verification ensures your safety and service quality.</Text>
+                </LinearGradient>
             </View>
 
-            <View style={styles.statusBox}>
-                <View style={styles.loadingRing}>
-                    <Ionicons name="cog" size={50} color={COLORS.roseGold} />
+            <View style={styles.progressBox}>
+                <View style={styles.pulseContainer}>
+                    <View style={styles.pulseCircle} />
+                    <View style={styles.mainCircle}>
+                        <Ionicons name="construct" size={40} color={COLORS.indigo} />
+                    </View>
                 </View>
-                <Text style={styles.statusTitle}>Service in Progress</Text>
-                <Text style={styles.statusSubtitle}>Your AC unit is being serviced by our expert.</Text>
+                <Text style={styles.statusTitle}>Expert is Working</Text>
+                <Text style={styles.statusSubtitle}>Your AC unit is currently being serviced. Feel free to relax!</Text>
             </View>
         </View>
     );
 
     const renderServiceEnded = () => (
-        <View style={styles.center}>
-            <View style={[styles.iconCircle, { backgroundColor: COLORS.gold }]}>
-                <Ionicons name="checkmark-done" size={80} color={COLORS.white} />
+        <View style={styles.centerContainer}>
+            <View style={styles.successIconBox}>
+                <LinearGradient
+                    colors={['#22c55e', '#16a34a']}
+                    style={styles.circleGradient}
+                >
+                    <Ionicons name="checkmark-done" size={60} color="#fff" />
+                </LinearGradient>
             </View>
-            <Text style={styles.statusTitle}>Service Completed!</Text>
-            <Text style={styles.statusSubtitle}>The technician has finished the service. Please complete the payment to proceed.</Text>
 
-            <View style={styles.paymentCard}>
-                <Text style={styles.paymentLabel}>Amount to Pay</Text>
-                <Text style={styles.paymentAmount}>₹{serviceAmount}</Text>
+            <Text style={styles.statusTitle}>Almost Done!</Text>
+            <Text style={styles.statusSubtitle}>Service has been completed successfully. Please settle the final payment.</Text>
+
+            <View style={styles.finalPaymentCard}>
+                <Text style={styles.finalPaymentLabel}>Total Amount Due</Text>
+                <View style={styles.amountRow}>
+                    <Text style={styles.finalCurrency}>₹</Text>
+                    <Text style={styles.finalAmount}>{serviceAmount}</Text>
+                </View>
+                <View style={styles.paymentSecurity}>
+                    <Ionicons name="shield-checkmark" size={14} color="#22c55e" />
+                    <Text style={styles.securityText}>Verified Secure Transaction</Text>
+                </View>
             </View>
 
             <TouchableOpacity
-                style={[styles.actionBtn, { backgroundColor: COLORS.roseGold, flexDirection: 'row', alignItems: 'center' }]}
+                style={styles.mainActionBtn}
+                activeOpacity={0.8}
                 onPress={() => {
                     navigation.navigate('CustomerRazorpayCheckout', {
                         rideId: rideId,
@@ -95,90 +117,320 @@ export default function ServiceStatusScreen({ route, navigation }) {
                     });
                 }}
             >
-                <Ionicons name="card" size={20} color={COLORS.white} style={{ marginRight: 8 }} />
-                <Text style={styles.actionBtnText}>Pay Now</Text>
+                <LinearGradient
+                    colors={[COLORS.indigo, '#3730a3']}
+                    style={styles.actionBtnGradient}
+                >
+                    <Ionicons name="card" size={20} color="#fff" style={{ marginRight: 10 }} />
+                    <Text style={styles.actionBtnText}>Pay Now via Razorpay</Text>
+                </LinearGradient>
             </TouchableOpacity>
-
-            <Text style={styles.secureText}>
-                <Ionicons name="shield-checkmark" size={14} color={COLORS.grey} /> Secure payment via Razorpay
-            </Text>
         </View>
     );
 
     const renderCompleted = () => (
-        <View style={styles.center}>
-            <View style={[styles.iconCircle, { backgroundColor: COLORS.success }]}>
-                <Ionicons name="checkmark-circle" size={80} color={COLORS.white} />
+        <View style={styles.centerContainer}>
+            <View style={[styles.successIconBox, { backgroundColor: '#f0fdf4' }]}>
+                <Ionicons name="sparkles" size={70} color="#22c55e" />
             </View>
-            <Text style={styles.statusTitle}>Service Completed!</Text>
-            <Text style={styles.statusSubtitle}>Thank you for choosing Zyro AC. We hope you are satisfied with the result.</Text>
+            <Text style={styles.statusTitle}>Service Finished!</Text>
+            <Text style={styles.statusSubtitle}>Your cooling expert has finished the job. Hope everything is perfect!</Text>
 
             <TouchableOpacity
-                style={styles.actionBtn}
+                style={styles.mainActionBtn}
+                activeOpacity={0.8}
                 onPress={() => setStep('rating')}
             >
-                <Text style={styles.actionBtnText}>Rate Service</Text>
+                <LinearGradient
+                    colors={[COLORS.slate, COLORS.slateLight]}
+                    style={styles.actionBtnGradient}
+                >
+                    <Text style={styles.actionBtnText}>Leave a Rating</Text>
+                </LinearGradient>
             </TouchableOpacity>
         </View>
     );
 
     const renderRating = () => (
-        <View style={styles.center}>
-            <Text style={styles.statusTitle}>Rate your experience</Text>
-            <Text style={styles.statusSubtitle}>How was the technician's performance?</Text>
+        <View style={styles.centerContainer}>
+            <Text style={styles.statusTitle}>Rate Experience</Text>
+            <Text style={styles.statusSubtitle}>How would you rate the service quality?</Text>
 
-            <View style={styles.starsRow}>
+            <View style={styles.ratingStars}>
                 {[1, 2, 3, 4, 5].map(i => (
-                    <Ionicons key={i} name="star" size={40} color={COLORS.gold} />
+                    <TouchableOpacity key={i} style={styles.starBtn}>
+                        <Ionicons name="star" size={44} color={i <= 4 ? "#f59e0b" : "#e2e8f0"} />
+                    </TouchableOpacity>
                 ))}
             </View>
 
             <TouchableOpacity
-                style={styles.actionBtn}
+                style={styles.mainActionBtn}
+                activeOpacity={0.8}
                 onPress={() => navigation.replace('Home')}
             >
-                <Text style={styles.actionBtnText}>Submit & Exit</Text>
+                <LinearGradient
+                    colors={[COLORS.indigo, '#3730a3']}
+                    style={styles.actionBtnGradient}
+                >
+                    <Text style={styles.actionBtnText}>Submit & Finish</Text>
+                </LinearGradient>
             </TouchableOpacity>
         </View>
     );
 
     return (
-        <SafeAreaView style={styles.container}>
-            <StatusBar style="dark" />
-            <View style={styles.header}>
-                <Text style={styles.headerTitle}>SERVICE STATUS</Text>
-            </View>
+        <View style={styles.container}>
+            <StatusBar barStyle="light-content" />
 
-            <View style={styles.content}>
+            <LinearGradient
+                colors={[COLORS.slate, COLORS.slateLight]}
+                style={styles.header}
+            >
+                <SafeAreaView edges={['top']}>
+                    <View style={styles.headerContent}>
+                        <View style={{ width: 44 }} />
+                        <Text style={styles.headerTitle}>Live Activity</Text>
+                        <TouchableOpacity style={styles.helpBtn}>
+                            <Ionicons name="help-circle-outline" size={24} color="#fff" />
+                        </TouchableOpacity>
+                    </View>
+                </SafeAreaView>
+            </LinearGradient>
+
+            <View style={styles.mainContent}>
                 {step === 'in_progress' && renderInProgress()}
                 {step === 'service_ended' && renderServiceEnded()}
                 {step === 'completed' && renderCompleted()}
                 {step === 'rating' && renderRating()}
             </View>
-        </SafeAreaView>
+        </View>
     );
 }
 
 const styles = StyleSheet.create({
-    container: { flex: 1, backgroundColor: COLORS.white },
-    header: { padding: SPACING.lg, alignItems: 'center', borderBottomWidth: 1, borderBottomColor: COLORS.greyLight },
-    headerTitle: { fontSize: 16, fontWeight: 'bold', color: COLORS.black, letterSpacing: 1 },
-    content: { flex: 1, justifyContent: 'center', padding: SPACING.xxl },
-    center: { alignItems: 'center' },
-    otpCard: { backgroundColor: COLORS.primaryBg, padding: SPACING.xl, borderRadius: 25, width: '100%', alignItems: 'center', marginBottom: 50, borderWidth: 1, borderColor: COLORS.roseGoldMuted },
-    otpLabel: { fontSize: 12, fontWeight: '800', color: COLORS.roseGold, marginBottom: 15, letterSpacing: 1 },
-    otpCode: { fontSize: 56, fontWeight: '900', color: COLORS.black, letterSpacing: 10 },
-    otpDesc: { fontSize: 13, color: COLORS.grey, textAlign: 'center', marginTop: 15, lineHeight: 18 },
-    statusBox: { alignItems: 'center' },
-    loadingRing: { width: 100, height: 100, borderRadius: 50, borderWeight: 2, borderColor: COLORS.roseGold, justifyContent: 'center', alignItems: 'center', marginBottom: SPACING.xl },
-    statusTitle: { fontSize: 24, fontWeight: 'bold', color: COLORS.black, marginBottom: SPACING.sm, textAlign: 'center' },
-    statusSubtitle: { fontSize: 16, color: COLORS.grey, textAlign: 'center', lineHeight: 22 },
-    iconCircle: { width: 140, height: 140, borderRadius: 70, justifyContent: 'center', alignItems: 'center', marginBottom: SPACING.xl },
-    actionBtn: { backgroundColor: COLORS.roseGold, height: 56, width: '100%', borderRadius: 16, justifyContent: 'center', alignItems: 'center', marginTop: 40, ...SHADOWS.medium },
-    actionBtnText: { color: COLORS.white, fontSize: 16, fontWeight: 'bold' },
-    starsRow: { flexDirection: 'row', gap: 10, marginTop: SPACING.xl },
-    paymentCard: { backgroundColor: COLORS.primaryBg, padding: SPACING.xl, borderRadius: 20, width: '100%', alignItems: 'center', marginTop: 30, borderWidth: 2, borderColor: COLORS.roseGoldMuted },
-    paymentLabel: { fontSize: 14, color: COLORS.grey, marginBottom: 8, fontWeight: '600' },
-    paymentAmount: { fontSize: 42, fontWeight: '900', color: COLORS.roseGold },
-    secureText: { fontSize: 12, color: COLORS.grey, marginTop: 15, textAlign: 'center' },
+    container: {
+        flex: 1,
+        backgroundColor: COLORS.premiumBg
+    },
+    header: {
+        paddingBottom: 20,
+        borderBottomLeftRadius: 24,
+        borderBottomRightRadius: 24,
+    },
+    headerContent: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        paddingHorizontal: 20,
+        paddingTop: 10,
+    },
+    headerTitle: {
+        color: '#fff',
+        fontSize: 18,
+        fontWeight: 'bold',
+    },
+    helpBtn: {
+        width: 44,
+        height: 44,
+        borderRadius: 12,
+        backgroundColor: 'rgba(255,255,255,0.1)',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    mainContent: {
+        flex: 1,
+        paddingHorizontal: 24,
+    },
+    centerContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    otpCard: {
+        width: '100%',
+        borderRadius: 24,
+        backgroundColor: '#fff',
+        borderWidth: 1.5,
+        borderColor: COLORS.indigo,
+        overflow: 'hidden',
+        marginBottom: 40,
+        ...SHADOWS.medium,
+    },
+    otpGradient: {
+        padding: 24,
+        alignItems: 'center',
+    },
+    otpLabel: {
+        fontSize: 12,
+        fontWeight: '800',
+        color: COLORS.indigo,
+        marginBottom: 20,
+        letterSpacing: 1.5,
+    },
+    otpNumberContainer: {
+        flexDirection: 'row',
+        gap: 10,
+    },
+    otpDigitBox: {
+        width: 50,
+        height: 60,
+        borderRadius: 14,
+        backgroundColor: '#fff',
+        justifyContent: 'center',
+        alignItems: 'center',
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
+        ...SHADOWS.light,
+    },
+    otpDigitText: {
+        fontSize: 32,
+        fontWeight: '900',
+        color: COLORS.textMain,
+    },
+    otpDesc: {
+        fontSize: 13,
+        color: COLORS.textMuted,
+        textAlign: 'center',
+        marginTop: 20,
+        lineHeight: 18,
+        fontWeight: '500',
+    },
+    progressBox: {
+        alignItems: 'center',
+        width: '100%',
+    },
+    pulseContainer: {
+        width: 120,
+        height: 120,
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginBottom: 24,
+    },
+    mainCircle: {
+        width: 80,
+        height: 80,
+        borderRadius: 40,
+        backgroundColor: '#fff',
+        justifyContent: 'center',
+        alignItems: 'center',
+        zIndex: 2,
+        ...SHADOWS.medium,
+    },
+    pulseCircle: {
+        position: 'absolute',
+        width: 110,
+        height: 110,
+        borderRadius: 55,
+        backgroundColor: 'rgba(79, 70, 229, 0.1)',
+        zIndex: 1,
+    },
+    statusTitle: {
+        fontSize: 26,
+        fontWeight: '900',
+        color: COLORS.textMain,
+        marginBottom: 10,
+        textAlign: 'center'
+    },
+    statusSubtitle: {
+        fontSize: 16,
+        color: COLORS.textMuted,
+        textAlign: 'center',
+        lineHeight: 24,
+        paddingHorizontal: 20,
+    },
+    successIconBox: {
+        width: 140,
+        height: 140,
+        borderRadius: 70,
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginBottom: 30
+    },
+    circleGradient: {
+        width: '100%',
+        height: '100%',
+        borderRadius: 70,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    finalPaymentCard: {
+        backgroundColor: '#fff',
+        padding: 24,
+        borderRadius: 24,
+        width: '100%',
+        alignItems: 'center',
+        marginTop: 30,
+        borderWidth: 1,
+        borderColor: COLORS.borderLight,
+        ...SHADOWS.medium,
+    },
+    finalPaymentLabel: {
+        fontSize: 14,
+        color: COLORS.textMuted,
+        marginBottom: 10,
+        fontWeight: '700',
+        textTransform: 'uppercase',
+        letterSpacing: 0.5,
+    },
+    amountRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginBottom: 16,
+    },
+    finalCurrency: {
+        fontSize: 24,
+        fontWeight: '700',
+        color: COLORS.indigo,
+        marginTop: 10,
+        marginRight: 4,
+    },
+    finalAmount: {
+        fontSize: 52,
+        fontWeight: '900',
+        color: COLORS.textMain
+    },
+    paymentSecurity: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        paddingHorizontal: 16,
+        paddingVertical: 8,
+        backgroundColor: '#f0fdf4',
+        borderRadius: 12,
+    },
+    securityText: {
+        fontSize: 12,
+        fontWeight: '700',
+        color: '#22c55e',
+    },
+    mainActionBtn: {
+        width: '100%',
+        height: 60,
+        borderRadius: 18,
+        marginTop: 40,
+        overflow: 'hidden',
+        ...SHADOWS.medium
+    },
+    actionBtnGradient: {
+        flex: 1,
+        flexDirection: 'row',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    actionBtnText: {
+        color: '#fff',
+        fontSize: 18,
+        fontWeight: '800'
+    },
+    ratingStars: {
+        flexDirection: 'row',
+        gap: 12,
+        marginTop: 30,
+        marginBottom: 20,
+    },
+    starBtn: {
+        padding: 4,
+    }
 });
+
