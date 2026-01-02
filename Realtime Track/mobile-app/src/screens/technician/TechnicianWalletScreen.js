@@ -16,7 +16,9 @@ export default function TechnicianWalletScreen({ navigation }) {
     const [balance, setBalance] = useState(0);
     const [commissionDue, setCommissionDue] = useState(0);
     const [transactions, setTransactions] = useState([]);
+    const [withdrawals, setWithdrawals] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [refreshing, setRefreshing] = useState(false);
 
     useEffect(() => {
         loadWallet();
@@ -24,12 +26,24 @@ export default function TechnicianWalletScreen({ navigation }) {
 
     const loadWallet = async () => {
         const result = await technicianService.getWallet();
+        const withdrawalResult = await technicianService.getWithdrawalHistory();
+
         if (result.success) {
             setBalance(result.balance);
             setCommissionDue(result.commissionDue);
             setTransactions(result.transactions || MOCK_TRANSACTIONS);
         }
+
+        if (withdrawalResult.success) {
+            setWithdrawals(withdrawalResult.withdrawals || []);
+        }
         setLoading(false);
+    };
+
+    const onRefresh = async () => {
+        setRefreshing(true);
+        await loadWallet();
+        setRefreshing(false);
     };
 
     const renderHeader = () => (
@@ -57,7 +71,7 @@ export default function TechnicianWalletScreen({ navigation }) {
                             if (commissionDue > 0) {
                                 Alert.alert('Dues Pending', 'Please clear company commission dues before withdrawing.');
                             } else {
-                                // navigation.navigate('Withdrawal');
+                                navigation.navigate('WithdrawalRequest');
                             }
                         }}
                     >
@@ -83,6 +97,43 @@ export default function TechnicianWalletScreen({ navigation }) {
                     >
                         <Text style={styles.payNowText}>Pay Dues</Text>
                     </TouchableOpacity>
+                </View>
+            )}
+
+            {/* Withdrawal Requests Section */}
+            {withdrawals.length > 0 && (
+                <View style={{ marginBottom: SPACING.lg }}>
+                    <View style={styles.sectionHeader}>
+                        <Text style={styles.sectionTitle}>Withdrawal Requests</Text>
+                    </View>
+                    {withdrawals.slice(0, 3).map((req, idx) => (
+                        <View key={req._id || idx} style={styles.withdrawalReqItem}>
+                            <View style={styles.withdrawalIconWrap}>
+                                <Ionicons
+                                    name={req.status === 'completed' ? 'checkmark-circle' : 'time'}
+                                    size={20}
+                                    color={req.status === 'completed' ? COLORS.earningsGreen : COLORS.warningAmber}
+                                />
+                            </View>
+                            <View style={{ flex: 1 }}>
+                                <Text style={styles.withdrawalAmount}>₹{req.amount}</Text>
+                                <Text style={styles.withdrawalDate}>
+                                    {new Date(req.createdAt).toLocaleDateString()}
+                                </Text>
+                            </View>
+                            <View style={[
+                                styles.statusPill,
+                                { backgroundColor: req.status === 'completed' ? COLORS.earningsGreen + '20' : COLORS.warningAmber + '20' }
+                            ]}>
+                                <Text style={[
+                                    styles.statusPillText,
+                                    { color: req.status === 'completed' ? COLORS.earningsGreen : COLORS.warningAmber }
+                                ]}>
+                                    {req.status.toUpperCase()}
+                                </Text>
+                            </View>
+                        </View>
+                    ))}
                 </View>
             )}
 
@@ -148,6 +199,8 @@ export default function TechnicianWalletScreen({ navigation }) {
                 ListHeaderComponent={renderHeader}
                 contentContainerStyle={styles.scrollContent}
                 stickyHeaderIndices={[0]}
+                refreshing={refreshing}
+                onRefresh={onRefresh}
             />
         </SafeAreaView>
     );
@@ -231,4 +284,25 @@ const styles = StyleSheet.create({
     disabledBtn: {
         opacity: 0.5,
     },
+    withdrawalReqItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        padding: 12,
+        backgroundColor: COLORS.greyLight,
+        borderRadius: 15,
+        marginBottom: 8,
+        gap: 12
+    },
+    withdrawalIconWrap: {
+        width: 36,
+        height: 36,
+        borderRadius: 18,
+        backgroundColor: COLORS.white,
+        justifyContent: 'center',
+        alignItems: 'center'
+    },
+    withdrawalAmount: { fontSize: 15, fontWeight: 'bold', color: COLORS.black },
+    withdrawalDate: { fontSize: 11, color: COLORS.grey },
+    statusPill: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10 },
+    statusPillText: { fontSize: 10, fontWeight: '800' },
 });

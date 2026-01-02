@@ -37,6 +37,7 @@ import CommissionPaidScreen from './src/screens/technician/CommissionPaidScreen'
 import TechnicianHistoryScreen from './src/screens/technician/TechnicianHistoryScreen';
 import TechnicianProfileScreen from './src/screens/technician/TechnicianProfileScreen';
 import TechnicianNavigationScreen from './src/screens/technician/TechnicianNavigationScreen';
+import WithdrawalRequestScreen from './src/screens/technician/WithdrawalRequestScreen';
 import DriverScreen from './src/screens/technician/DriverScreen'; // Legacy - keep for existing tracking
 import RazorpayCheckoutScreen from './src/screens/technician/RazorpayCheckoutScreen';
 
@@ -250,6 +251,11 @@ export default function App() {
                     <Stack.Screen
                         name="TechnicianHistory"
                         component={TechnicianHistoryScreen}
+                        options={{ headerShown: false }}
+                    />
+                    <Stack.Screen
+                        name="WithdrawalRequest"
+                        component={WithdrawalRequestScreen}
                         options={{ headerShown: false }}
                     />
                     <Stack.Screen

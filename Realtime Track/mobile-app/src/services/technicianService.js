@@ -4,17 +4,21 @@ import * as Location from 'expo-location';
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'http://192.168.1.100:4000';
 
-// Get user ID from storage
-const getUserId = async () => {
+// Get user data from storage
+export const getUserData = async () => {
     try {
         const user = await AsyncStorage.getItem('userData');
-        if (!user) return null;
-        const userData = JSON.parse(user);
-        return userData.id || userData._id || null;
+        return user ? JSON.parse(user) : null;
     } catch (error) {
-        console.error('Error getting user ID:', error);
+        console.error('Error getting user data:', error);
         return null;
     }
+};
+
+// Get user ID from storage
+const getUserId = async () => {
+    const userData = await getUserData();
+    return userData?.id || userData?._id || null;
 };
 
 // Dashboard
@@ -180,6 +184,19 @@ export const withdrawMoney = async (amount, bankDetails) => {
     }
 };
 
+export const getWithdrawalHistory = async () => {
+    try {
+        const userId = await getUserId();
+        const response = await axios.get(`${API_URL}/api/wallet/withdrawals`, {
+            params: { userId }
+        });
+        return response.data;
+    } catch (error) {
+        console.error('Get withdrawal history error:', error);
+        return { success: false, error: error.message };
+    }
+};
+
 // Commission Management
 export const getPendingCommission = async () => {
     try {
@@ -238,6 +255,19 @@ export const verifySettlementPayment = async (paymentData) => {
     }
 };
 
+export const withdrawMoneyEnhanced = async (payload) => {
+    try {
+        const userId = await getUserId();
+        const response = await axios.post(`${API_URL}/api/wallet/withdraw`, payload, {
+            params: { userId }
+        });
+        return response.data;
+    } catch (error) {
+        console.error('Withdraw enhanced error:', error);
+        return { success: false, error: error.message };
+    }
+};
+
 export default {
     getTechnicianDashboard,
     updateOnlineStatus,
@@ -249,8 +279,11 @@ export default {
     getTransactions,
     addMoney,
     withdrawMoney,
+    withdrawMoneyEnhanced,
     getPendingCommission,
     payCommission,
     createSettlementOrder,
     verifySettlementPayment,
+    getWithdrawalHistory,
+    getUserData,
 };

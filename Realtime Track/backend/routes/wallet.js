@@ -96,49 +96,107 @@ router.post('/add-money', async (req, res) => {
     }
 });
 
-// Withdraw from wallet
+const WithdrawalRequest = require('../models/WithdrawalRequest');
+
+// Get wallet details
+// ... (lines 6-98)
+
+// Withdraw from wallet (Request Flow)
 router.post('/withdraw', async (req, res) => {
     try {
         const userId = req.query.userId || req.user?.id;
-        const { amount, bankDetails } = req.body;
+        const { amount, payoutMethod, bankDetails, upiId } = req.body;
+
+        if (!amount || amount < 100) {
+            return res.status(400).json({ success: false, error: 'Minimum withdrawal is ₹100' });
+        }
 
         const technician = await Technician.findOne({ userId });
         if (!technician) {
-            return res.status(404).json({ error: 'Technician not found' });
+            return res.status(404).json({ success: false, error: 'Technician not found' });
         }
 
+        // 1. Check for pending company dues
         if (technician.wallet.commissionDue > 0) {
             return res.status(400).json({
                 success: false,
                 error: 'DUES_PENDING',
-                message: 'Please clear pending company dues before withdrawing.'
+                message: 'Please clear pending company dues (₹' + technician.wallet.commissionDue + ') before withdrawing.'
             });
         }
 
-        if (technician.wallet.balance < amount) {
-            return res.status(400).json({ error: 'Insufficient balance' });
+        // 2. Check for KYC verification (DISABLED to allow Admin Verification)
+        // if (!technician.documents?.kycVerified) {
+        //     return res.status(400).json({
+        //         success: false,
+        //         error: 'KYC_NOT_VERIFIED',
+        //         message: 'Your account must be KYC verified to withdraw funds.'
+        //     });
+        // }
+
+        // 3. Check for sufficient balance (considering other pending requests)
+        const pendingRequests = await WithdrawalRequest.find({
+            technician: userId,
+            status: { $in: ['pending', 'approved'] }
+        });
+
+        const pendingTotal = pendingRequests.reduce((sum, req) => sum + req.amount, 0);
+
+        if (technician.wallet.balance < (pendingTotal + amount)) {
+            return res.status(400).json({
+                success: false,
+                error: 'INSUFFICIENT_FUNDS',
+                message: 'Insufficient balance. You have ₹' + (technician.wallet.balance - pendingTotal) + ' available for withdrawal.'
+            });
         }
 
-        // Deduct from wallet
-        technician.wallet.balance -= amount;
-        await technician.save();
-
-        // Create transaction
-        await Transaction.create({
+        // 4. Create Withdrawal Request
+        const requestData = {
             technician: userId,
-            type: 'debit',
             amount,
-            description: 'Withdrawal',
-            status: 'completed',
-            metadata: { bankDetails }
-        });
+            payoutMethod: payoutMethod || 'bank',
+            status: 'pending'
+        };
+
+        if (payoutMethod === 'upi') {
+            if (!upiId) return res.status(400).json({ success: false, error: 'UPI ID is required' });
+            requestData.upiId = upiId;
+        } else {
+            if (!bankDetails?.accountNumber || !bankDetails?.ifscCode) {
+                return res.status(400).json({ success: false, error: 'Complete bank details are required' });
+            }
+            requestData.bankDetails = bankDetails;
+        }
+
+        const withdrawal = await WithdrawalRequest.create(requestData);
 
         res.json({
             success: true,
-            balance: technician.wallet.balance
+            balance: technician.wallet.balance,
+            availableBalance: technician.wallet.balance - pendingTotal - amount,
+            withdrawalId: withdrawal._id,
+            message: 'Withdrawal request submitted for admin verification.'
         });
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        console.error('Withdrawal Request Error:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Get withdrawal requests for technician
+router.get('/withdrawals', async (req, res) => {
+    try {
+        const userId = req.query.userId || req.user?.id;
+        const withdrawals = await WithdrawalRequest.find({ technician: userId })
+            .sort({ createdAt: -1 })
+            .limit(50);
+
+        res.json({
+            success: true,
+            withdrawals
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
     }
 });
 
