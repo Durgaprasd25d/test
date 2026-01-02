@@ -1,8 +1,90 @@
 const express = require('express');
 const router = express.Router();
 const Technician = require('../models/Technician');
+const User = require('../models/User');
+const Ride = require('../models/Ride');
 const Transaction = require('../models/Transaction');
 const WithdrawalRequest = require('../models/WithdrawalRequest');
+
+/**
+ * ADMIN: Dashboard Statistics
+ */
+router.get('/stats', async (req, res) => {
+    try {
+        const totalUsers = await User.countDocuments({ role: 'customer' });
+        const totalTechnicians = await User.countDocuments({ role: 'technician' });
+        const totalJobs = await Ride.countDocuments();
+        const completedJobs = await Ride.countDocuments({ status: 'COMPLETED' });
+
+        // Revenue calculations
+        const rides = await Ride.find({ status: 'COMPLETED' });
+        const totalRevenue = rides.reduce((sum, job) => sum + (job.price || 0), 0);
+        const totalCommission = rides.reduce((sum, job) => sum + (Math.round((job.price || 0) * 0.2)), 0);
+
+        // Wallet stats
+        const techs = await Technician.find({});
+        const totalWalletBalance = techs.reduce((sum, t) => sum + (t.wallet?.balance || 0), 0);
+        const totalCommissionsDue = techs.reduce((sum, t) => sum + (t.wallet?.commissionDue || 0), 0);
+
+        res.json({
+            success: true,
+            stats: {
+                users: totalUsers,
+                technicians: totalTechnicians,
+                jobs: totalJobs,
+                completedJobs,
+                revenue: totalRevenue,
+                commission: totalCommission,
+                wallets: totalWalletBalance,
+                dues: totalCommissionsDue
+            }
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+/**
+ * ADMIN: List all technicians with details
+ */
+router.get('/technicians', async (req, res) => {
+    try {
+        const technicians = await Technician.find({})
+            .populate('userId', 'name mobile role isActive');
+
+        res.json({
+            success: true,
+            technicians
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+/**
+ * ADMIN: Verify/unverify technician documents
+ */
+router.post('/technicians/:userId/verify-kyc', async (req, res) => {
+    try {
+        const { verified } = req.body;
+        const { userId } = req.params;
+
+        const technician = await Technician.findOne({ userId });
+        if (!technician) {
+            return res.status(404).json({ success: false, error: 'Technician not found' });
+        }
+
+        technician.documents.kycVerified = verified;
+        await technician.save();
+
+        res.json({
+            success: true,
+            message: `Technician KYC ${verified ? 'verified' : 'unverified'} successfully.`
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
 
 /**
  * ADMIN: List all withdrawal requests

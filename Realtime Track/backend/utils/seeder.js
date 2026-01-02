@@ -76,31 +76,58 @@ const initialData = [
 ];
 
 const seedDatabase = async () => {
+    // 1. Seed Categories & Services
     try {
+        const Category = require('../models/Category');
+        const Service = require('../models/Service');
+
         const categoryCount = await Category.countDocuments();
-        if (categoryCount > 0) {
-            console.log('ℹ️ Database already has categories, skipping seed.');
-            return;
+        if (categoryCount === 0) {
+            console.log('🌱 Seeding services and categories...');
+            for (const catData of initialData) {
+                const { services, ...categoryInfo } = catData;
+                const category = await Category.create(categoryInfo);
+
+                const servicesToCreate = services.map(s => ({
+                    ...s,
+                    category: category._id
+                }));
+
+                await Service.insertMany(servicesToCreate);
+                console.log(`✅ Seeded Category: ${category.name} with ${servicesToCreate.length} services.`);
+            }
+            console.log('✨ Service seeding completed!');
+        } else {
+            console.log('ℹ️ Categories already exist, skipping service seed.');
         }
-
-        console.log('🌱 Seeding services and categories...');
-
-        for (const catData of initialData) {
-            const { services, ...categoryInfo } = catData;
-            const category = await Category.create(categoryInfo);
-
-            const servicesToCreate = services.map(s => ({
-                ...s,
-                category: category._id
-            }));
-
-            await Service.insertMany(servicesToCreate);
-            console.log(`✅ Seeded Category: ${category.name} with ${servicesToCreate.length} services.`);
-        }
-
-        console.log('✨ Seeding completed successfully!');
     } catch (error) {
-        console.error('❌ Error seeding database:', error);
+        console.error('❌ Error seeding services:', error);
+    }
+
+    // 2. Seed Admin User
+    try {
+        const User = require('../models/User');
+        const adminFound = await User.findOne({ role: 'admin' });
+        const mobileAdminFound = await User.findOne({ mobile: 'admin' });
+
+        if (!adminFound && !mobileAdminFound) {
+            console.log('🛡️ Creating default Admin user...');
+            await User.create({
+                name: 'Super Admin',
+                mobile: 'admin',
+                password: 'admin',
+                role: 'admin',
+                isActive: true
+            });
+            console.log('✅ Default Admin created: admin / admin');
+        } else {
+            console.log('ℹ️ Admin user already exists:', {
+                roleAdmin: adminFound?.mobile,
+                mobileAdmin: mobileAdminFound?.mobile
+            });
+        }
+    } catch (error) {
+        console.error('❌ Error seeding admin:', error);
     }
 };
 

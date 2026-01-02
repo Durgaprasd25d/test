@@ -47,11 +47,13 @@ router.post('/login', async (req, res) => {
         const { mobile, password } = req.body;
 
         const user = await User.findOne({ mobile });
+        console.log(`Login attempt for ${mobile}. User found: ${!!user}`);
         if (!user) {
             return res.status(401).json({ success: false, error: 'Invalid mobile number or password' });
         }
 
         const isMatch = await user.comparePassword(password);
+        console.log(`Password match for ${mobile}: ${isMatch}`);
         if (!isMatch) {
             return res.status(401).json({ success: false, error: 'Invalid mobile number or password' });
         }
