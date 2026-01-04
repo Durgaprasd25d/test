@@ -53,6 +53,7 @@ export default function CustomerScreen({ route, navigation }) {
     const [paymentMethod, setPaymentMethod] = useState('COD');
     const [paymentStatus, setPaymentStatus] = useState('PENDING');
     const [paymentTiming, setPaymentTiming] = useState('PREPAID');
+    const [serviceAmount, setServiceAmount] = useState(0);
     const [showPaymentModal, setShowPaymentModal] = useState(false);
     const [showCancelModal, setShowCancelModal] = useState(false);
     const [cancelReason, setCancelReason] = useState('');
@@ -183,6 +184,7 @@ export default function CustomerScreen({ route, navigation }) {
                     setPaymentMethod(ride.paymentMethod || 'ONLINE');
                     setPaymentStatus(ride.paymentStatus || 'PENDING');
                     setPaymentTiming(ride.paymentTiming || 'PREPAID');
+                    setServiceAmount(ride.price || 0);
 
                     const messages = {
                         'ACCEPTED': 'Technician is en route',
@@ -248,6 +250,7 @@ export default function CustomerScreen({ route, navigation }) {
                 setRideStatus('ACCEPTED');
                 setStatusMessage('Expert technician assigned');
                 setOnlineTechnicians([]);
+                if (data.price) setServiceAmount(data.price);
             });
 
             socket.on('ride:arrived', () => {
@@ -266,12 +269,15 @@ export default function CustomerScreen({ route, navigation }) {
 
             socket.on('ride:service_ended', (data) => {
                 if (data.completionOtp) setMainOtp(data.completionOtp);
-                setStatusMessage('Awaiting final verification');
+                if (data.price) setServiceAmount(data.price);
+                setStatusMessage('Service completed by expert');
+                setRideStatus('COMPLETED');
             });
 
             socket.on('payment:success', (data) => {
-                setMainOtp(data.completionOtp);
-                Alert.alert('Payment Secured', 'Transaction successful. Please share the final completion code.');
+                setPaymentStatus('PAID');
+                if (data.completionOtp) setMainOtp(data.completionOtp);
+                Alert.alert('Payment Secured', 'Transaction successful. Your completion code is now active.');
             });
 
             socket.on('ride:completed', () => {
@@ -409,6 +415,19 @@ export default function CustomerScreen({ route, navigation }) {
                     <View style={[styles.statusDot, { backgroundColor: connectionStatus === 'connected' ? '#22c55e' : '#f59e0b' }]} />
                     <Text style={styles.statusTopText}>{statusMessage}</Text>
                     {connectionStatus !== 'connected' && <ActivityIndicator size="small" color={COLORS.indigo} style={{ marginLeft: 8 }} />}
+
+                    {['ARRIVED', 'IN_PROGRESS', 'COMPLETED'].includes(rideStatus) && paymentStatus !== 'PAID' && serviceAmount > 0 && (
+                        <TouchableOpacity
+                            style={styles.pillPayBtn}
+                            onPress={() => navigation.navigate('CustomerRazorpayCheckout', {
+                                rideId: rideId,
+                                amount: serviceAmount,
+                                paymentTiming: 'POSTPAID'
+                            })}
+                        >
+                            <Text style={styles.pillPayText}>PAY NOW</Text>
+                        </TouchableOpacity>
+                    )}
                 </View>
 
                 {['REQUESTED', 'ACCEPTED', 'ARRIVED'].includes(rideStatus) && (
@@ -501,7 +520,7 @@ export default function CustomerScreen({ route, navigation }) {
                         </View>
                     )}
 
-                    {mainOtp && (rideStatus === 'ARRIVED' || rideStatus === 'IN_PROGRESS' || rideStatus === 'COMPLETED') && (
+                    {mainOtp && (rideStatus === 'ARRIVED' || rideStatus === 'IN_PROGRESS' || rideStatus === 'COMPLETED') && (paymentTiming === 'PREPAID' || paymentStatus === 'PAID') && (
                         <View style={styles.otpSection}>
                             <View style={[styles.otpBox, { backgroundColor: COLORS.indigo }]}>
                                 <Text style={[styles.otpBoxLabel, { color: 'rgba(255,255,255,0.7)' }]}>FINAL COMPLETION CODE</Text>
@@ -511,27 +530,25 @@ export default function CustomerScreen({ route, navigation }) {
                         </View>
                     )}
 
-                    {/* Post-Service Payment Button */}
-                    {rideStatus === 'COMPLETED' && paymentStatus !== 'PAID' && paymentTiming === 'POSTPAID' && (
-                        <TouchableOpacity
-                            style={styles.payNowBtn}
-                            onPress={() => navigation.navigate('CustomerRazorpayCheckout', {
-                                rideId: rideId,
-                                amount: 1000, // This should come from ride.price
-                                paymentTiming: 'POSTPAID'
-                            })}
-                        >
-                            <LinearGradient
-                                colors={['#22c55e', '#15803d']}
-                                style={styles.doneFullGradient}
-                            >
-                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                                    <Ionicons name="card" size={20} color="#fff" />
-                                    <Text style={styles.doneFullText}>Pay & Get Completion Code</Text>
-                                </View>
-                            </LinearGradient>
-                        </TouchableOpacity>
-                    )}
+                    {/* Postpaid Payment Banner (Not Clickable as per user request) */}
+                    {['ARRIVED', 'IN_PROGRESS', 'COMPLETED'].includes(rideStatus) &&
+                        paymentStatus !== 'PAID' &&
+                        paymentTiming === 'POSTPAID' &&
+                        serviceAmount > 0 && (
+                            <View style={styles.payNowBtn}>
+                                <LinearGradient
+                                    colors={['#94a3b8', '#64748b']} // Muted colors since it's just a banner
+                                    style={styles.doneFullGradient}
+                                >
+                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                                        <Ionicons name="information-circle" size={20} color="#fff" />
+                                        <Text style={styles.doneFullText}>
+                                            {rideStatus === 'COMPLETED' ? 'Settlement Required' : `Amount Due: ₹${serviceAmount}`}
+                                        </Text>
+                                    </View>
+                                </LinearGradient>
+                            </View>
+                        )}
 
                     <View style={styles.footerInfo}>
                         <TouchableOpacity
@@ -1136,5 +1153,17 @@ const styles = StyleSheet.create({
         shadowOpacity: 0.3,
         shadowRadius: 3,
         elevation: 5,
+    },
+    pillPayBtn: {
+        backgroundColor: '#22c55e',
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+        borderRadius: 20,
+        marginLeft: 10,
+    },
+    pillPayText: {
+        color: '#fff',
+        fontSize: 10,
+        fontWeight: '900',
     },
 });

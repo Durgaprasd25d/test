@@ -19,8 +19,13 @@ router.post('/create-order', async (req, res) => {
             return res.status(404).json({ success: false, error: 'Ride not found' });
         }
 
+        const finalAmount = amount || ride.price || 0;
+        if (finalAmount < 1) {
+            return res.status(400).json({ success: false, error: 'Payment amount must be at least ₹1' });
+        }
+
         const options = {
-            amount: Math.round(amount * 100), // amount in paise
+            amount: Math.round(finalAmount * 100), // amount in paise
             currency: 'INR',
             receipt: `rcpt_${rideId}`,
             notes: {
@@ -83,12 +88,27 @@ router.post('/verify-payment', async (req, res) => {
         };
         await ride.save();
 
-        // Emit socket event for payment success
+        // For POSTPAID: Payment success triggers completion OTP reveal if service is in progress
         const io = req.app.get('io');
-        io.to(`ride:${rideId}`).emit('payment:success', {
-            rideId,
-            completionOtp: ride.completionOtp // Send OTP if service is already complete
-        });
+        if (ride.paymentTiming === 'POSTPAID') {
+            // If OTP hasn't been generated yet (e.g., customer paying during tracking), generate it now
+            if (!ride.completionOtp) {
+                ride.completionOtp = Math.floor(10000 + Math.random() * 90000).toString();
+                await ride.save();
+            }
+
+            // Emit socket event for payment success with OTP
+            io.to(`ride:${rideId}`).emit('payment:success', {
+                rideId,
+                completionOtp: ride.completionOtp
+            });
+        } else {
+            // Emit socket event for payment success (for PREPAID)
+            io.to(`ride:${rideId}`).emit('payment:success', {
+                rideId,
+                completionOtp: ride.completionOtp // Send OTP if service is already complete
+            });
+        }
 
         // IMPORTANT: Broadcast job to all technicians if it was PREPAID payment
         // (Postpaid jobs are broadcasted at request time)

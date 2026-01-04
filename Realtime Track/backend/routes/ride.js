@@ -321,7 +321,7 @@ router.post('/end-service', async (req, res) => {
             paymentMethod: ride.paymentMethod,
             paymentTiming: ride.paymentTiming,
             price: ride.price || 1000,
-            completionOtp: ride.completionOtp // Always send as requested
+            completionOtp: ride.completionOtp
         });
 
         res.json({ success: true, data: ride });
