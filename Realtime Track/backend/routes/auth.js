@@ -76,4 +76,20 @@ router.post('/login', async (req, res) => {
     }
 });
 
+// Update FCM Token
+router.post('/fcm-token', async (req, res) => {
+    try {
+        const { userId, fcmToken } = req.body;
+        if (!userId || !fcmToken) {
+            return res.status(400).json({ success: false, error: 'Missing userId or fcmToken' });
+        }
+
+        await User.findByIdAndUpdate(userId, { fcmToken });
+        res.json({ success: true, message: 'FCM token updated successfully' });
+    } catch (err) {
+        console.error('FCM token update error:', err);
+        res.status(500).json({ success: false, error: 'Internal server error' });
+    }
+});
+
 module.exports = router;

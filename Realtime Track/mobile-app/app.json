@@ -20,7 +20,8 @@
       },
       "config": {
         "googleMapsApiKey": "AIzaSyBnA5Sw2GQC-Jt0rjH40qaGOx3vkALKWKA"
-      }
+      },
+      "googleServicesFile": "./google-services.json"
     },
     "android": {
       "package": "com.zyroac.app",
@@ -34,7 +35,8 @@
         "googleMaps": {
           "apiKey": "AIzaSyBnA5Sw2GQC-Jt0rjH40qaGOx3vkALKWKA"
         }
-      }
+      },
+      "googleServicesFile": "./google-services.json"
     },
     "web": {},
     "plugins": [
@@ -46,7 +48,9 @@
           "locationWhenInUsePermission": "Allow Zyro AC to use your location for real-time AC service tracking."
         }
       ],
-      "expo-font"
+      "expo-font",
+      "@react-native-firebase/app",
+      "@react-native-firebase/messaging"
     ]
   }
 }

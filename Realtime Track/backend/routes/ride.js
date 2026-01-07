@@ -3,6 +3,8 @@ const router = express.Router();
 const Ride = require('../models/Ride');
 const Technician = require('../models/Technician');
 const Transaction = require('../models/Transaction');
+const User = require('../models/User');
+const { sendToUser, sendPushNotification } = require('../services/notificationService');
 
 
 // Request a ride (Job)
@@ -37,6 +39,17 @@ router.post('/request', async (req, res) => {
                 paymentMethod: ride.paymentMethod,
                 paymentTiming: ride.paymentTiming
             });
+
+            // Push Notification to all Technicians
+            const technicians = await User.find({ role: 'technician', fcmToken: { $ne: null } }).select('fcmToken');
+            const tokens = technicians.map(t => t.fcmToken);
+            if (tokens.length > 0) {
+                await sendPushNotification(tokens, {
+                    title: 'New Job Request 🛠️',
+                    body: `A new ${ride.serviceType} job is available nearby.`,
+                    data: { rideId, type: 'NEW_JOB' }
+                });
+            }
         }
 
         res.json({ success: true, data: ride });
@@ -232,6 +245,13 @@ router.post('/accept', async (req, res) => {
             arrivalOtp // Send OTP to customer
         });
 
+        // Push Notification to Customer
+        await sendToUser(ride.customerId, {
+            title: 'Technician Assigned! 🚕',
+            body: `${technicianData.name} has accepted your ${ride.serviceType} request.`,
+            data: { rideId, type: 'JOB_ACCEPTED' }
+        });
+
         res.json({ success: true, data: { ...ride.toObject(), technician: technicianData } });
     } catch (error) {
         console.error('❌ Accept job error:', error);
@@ -373,6 +393,26 @@ router.post('/payment-success', async (req, res) => {
         // Notify the ride room that payment is done (without OTP)
         io.to(`ride:${rideId}`).emit('payment:verified', { rideId });
 
+        // Push Notification to Technician
+        if (ride.driverId) {
+            await sendToUser(ride.driverId, {
+                title: 'Payment Verified! ✅',
+                body: `The customer has paid for job #${ride.rideId}. You can now see the completion OTP.`,
+                data: { rideId, type: 'PAYMENT_SUCCESS' }
+            });
+        } else if (ride.paymentTiming === 'PREPAID') {
+            // New paid job: Notify all technicians
+            const technicians = await User.find({ role: 'technician', fcmToken: { $ne: null } }).select('fcmToken');
+            const tokens = technicians.map(t => t.fcmToken);
+            if (tokens.length > 0) {
+                await sendPushNotification(tokens, {
+                    title: 'New Prepaid Job! 💰',
+                    body: `A new prepaid ${ride.serviceType} job is available.`,
+                    data: { rideId, type: 'NEW_JOB' }
+                });
+            }
+        }
+
         res.json({ success: true, data: ride });
     } catch (error) {
         res.status(500).json({ success: false, error: 'Server error' });
@@ -443,6 +483,13 @@ router.post('/complete', async (req, res) => {
         if (ride.driverId) {
             io.to(`user:${ride.driverId}`).emit('ride:completed', { rideId });
         }
+
+        // Push Notification to Customer
+        await sendToUser(ride.customerId, {
+            title: 'Service Completed! ⭐',
+            body: `Your ${ride.serviceType} job is completed. Please rate the technician.`,
+            data: { rideId, type: 'JOB_COMPLETED' }
+        });
 
         res.json({ success: true, data: ride });
     } catch (error) {

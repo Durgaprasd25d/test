@@ -45,6 +45,7 @@ import VerificationPendingScreen from './src/screens/technician/VerificationPend
 
 import authService from './src/services/authService';
 import technicianService from './src/services/technicianService';
+import { fcmService } from './src/services/fcmService';
 import { COLORS } from './src/constants/theme';
 
 const Stack = createStackNavigator();
@@ -71,6 +72,9 @@ export default function App() {
                             setKycStatus(kycRes.kycStatus);
                         }
                     }
+
+                    // Register FCM for logged in user
+                    fcmService.register(user.id || user._id);
                 }
             } catch (e) {
                 console.error('Check login error:', e);
