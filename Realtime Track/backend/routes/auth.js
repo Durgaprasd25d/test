@@ -76,6 +76,61 @@ router.post('/login', async (req, res) => {
     }
 });
 
+// Firebase Verify (OTP)
+router.post('/firebase-verify', async (req, res) => {
+    try {
+        const { idToken, name, role } = req.body;
+        const { admin } = require('../config/firebase');
+
+        if (!admin) {
+            return res.status(500).json({ success: false, error: 'Firebase Admin not initialized' });
+        }
+
+        // Verify Firebase ID Token
+        const decodedToken = await admin.auth().verifyIdToken(idToken);
+        const phoneNumber = decodedToken.phone_number;
+
+        if (!phoneNumber) {
+            return res.status(400).json({ success: false, error: 'Phone number not found in token' });
+        }
+
+        // Clean phone number (remove +91 if present for consistency with existing DB)
+        const cleanMobile = phoneNumber.replace(/^\+91/, '');
+
+        // Find or Create User
+        let user = await User.findOne({ mobile: cleanMobile });
+
+        if (!user) {
+            // Auto-register new user
+            user = new User({
+                mobile: cleanMobile,
+                name: name || 'New User',
+                role: role || 'customer',
+                password: Math.random().toString(36).slice(-8) // Random placeholder password
+            });
+            await user.save();
+            console.log(`✅ Auto-registered new user via OTP: ${cleanMobile}`);
+        }
+
+        // Generate JWT Token
+        const token = jwt.sign({ id: user._id, role: user.role }, process.env.JWT_SECRET, { expiresIn: '7d' });
+
+        res.json({
+            success: true,
+            token,
+            user: {
+                id: user._id,
+                mobile: user.mobile,
+                name: user.name,
+                role: user.role
+            }
+        });
+    } catch (err) {
+        console.error('Firebase Verify error:', err);
+        res.status(401).json({ success: false, error: 'Invalid or expired Firebase token' });
+    }
+});
+
 // Update FCM Token
 router.post('/fcm-token', async (req, res) => {
     try {
