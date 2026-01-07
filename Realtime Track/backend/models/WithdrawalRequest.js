@@ -3,7 +3,7 @@ const mongoose = require('mongoose');
 const withdrawalRequestSchema = new mongoose.Schema({
     technician: {
         type: mongoose.Schema.Types.ObjectId,
-        ref: 'User',
+        ref: 'Technician',
         required: true
     },
     amount: {
@@ -13,7 +13,7 @@ const withdrawalRequestSchema = new mongoose.Schema({
     },
     status: {
         type: String,
-        enum: ['pending', 'approved', 'rejected'],
+        enum: ['pending', 'approved', 'completed', 'rejected'],
         default: 'pending'
     },
     payoutMethod: {

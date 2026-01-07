@@ -62,11 +62,31 @@ router.get('/technicians', async (req, res) => {
 });
 
 /**
- * ADMIN: Verify/unverify technician documents
+ * ADMIN: Get technicians by KYC status
+ */
+router.get('/technicians/verification-list', async (req, res) => {
+    try {
+        const { status } = req.query; // PENDING, VERIFIED, etc
+        const query = status ? { 'verification.kycStatus': status } : {};
+
+        const technicians = await Technician.find(query)
+            .populate('userId', 'name mobile');
+
+        res.json({
+            success: true,
+            technicians
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+/**
+ * ADMIN: Verify KYC documents
  */
 router.post('/technicians/:userId/verify-kyc', async (req, res) => {
     try {
-        const { verified } = req.body;
+        const { status, reason } = req.body; // 'VERIFIED' or 'REJECTED'
         const { userId } = req.params;
 
         const technician = await Technician.findOne({ userId });
@@ -74,13 +94,41 @@ router.post('/technicians/:userId/verify-kyc', async (req, res) => {
             return res.status(404).json({ success: false, error: 'Technician not found' });
         }
 
-        technician.documents.kycVerified = verified;
+        technician.verification.kycStatus = status;
+        if (status === 'VERIFIED') {
+            technician.verification.kycVerified = true;
+            technician.verification.rejectionReason = null;
+        } else {
+            technician.verification.kycVerified = false;
+            technician.verification.rejectionReason = reason;
+        }
+
+        technician.verification.reviewedAt = new Date();
         await technician.save();
 
-        res.json({
-            success: true,
-            message: `Technician KYC ${verified ? 'verified' : 'unverified'} successfully.`
-        });
+        res.json({ success: true, message: `KYC ${status} successfully.` });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+/**
+ * ADMIN: Verify for Payouts (explicitly)
+ */
+router.post('/technicians/:userId/verify-payout', async (req, res) => {
+    try {
+        const { isVerified } = req.body; // true or false
+        const { userId } = req.params;
+
+        const technician = await Technician.findOne({ userId });
+        if (!technician) {
+            return res.status(404).json({ success: false, error: 'Technician not found' });
+        }
+
+        technician.verification.adminVerified = isVerified;
+        await technician.save();
+
+        res.json({ success: true, message: `Payout verification set to ${isVerified}.` });
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
     }
@@ -95,7 +143,11 @@ router.get('/withdrawals', async (req, res) => {
         const query = status ? { status } : {};
 
         const withdrawals = await WithdrawalRequest.find(query)
-            .populate('technician', 'name mobile')
+            .populate({
+                path: 'technician',
+                select: 'userId verification stats',
+                populate: { path: 'userId', select: 'name mobile' }
+            })
             .sort({ createdAt: -1 });
 
         res.json({
@@ -132,10 +184,30 @@ router.post('/withdrawals/:id/status', async (req, res) => {
         withdrawal.adminNote = adminNote || '';
         await withdrawal.save();
 
+        // 1. If REJECTED, move money back from lockedAmount to balance
+        if (status === 'rejected') {
+            const technician = await Technician.findOne({ userId: withdrawal.technician });
+            if (technician) {
+                technician.wallet.lockedAmount -= withdrawal.amount;
+                technician.wallet.balance += withdrawal.amount;
+                await technician.save();
+
+                // Record reversal transaction
+                await Transaction.create({
+                    technician: withdrawal.technician,
+                    type: 'credit',
+                    amount: withdrawal.amount,
+                    description: `Withdrawal Request Rejected - Funds Restored`,
+                    status: 'completed',
+                    metadata: { withdrawalId: withdrawal._id }
+                });
+            }
+        }
+
         res.json({
             success: true,
             withdrawal,
-            message: `Withdrawal request ${status} successfully.`
+            message: `Withdrawal request ${status} successfully. Funds ${status === 'rejected' ? 'restored' : 'approved for payout'}.`
         });
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
@@ -177,8 +249,13 @@ router.post('/withdrawals/:id/mark-paid', async (req, res) => {
             });
         }
 
-        // 1. Deduct from wallet
-        technician.wallet.balance -= withdrawal.amount;
+        // 1. Deduct from lockedAmount (Phase 4 Pipeline Fix)
+        if (technician.wallet.lockedAmount < withdrawal.amount) {
+            // Fallback for older entries or inconsistencies
+            technician.wallet.balance -= withdrawal.amount;
+        } else {
+            technician.wallet.lockedAmount -= withdrawal.amount;
+        }
         await technician.save();
 
         // 2. Update Withdrawal Request

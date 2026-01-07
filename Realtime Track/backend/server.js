@@ -26,6 +26,8 @@ const commissionRoutes = require('./routes/commission');
 const serviceRoutes = require('./routes/serviceRoutes');
 const settlementRoutes = require('./routes/settlement');
 const adminRoutes = require('./routes/admin');
+const payoutRoutes = require('./routes/payout');
+const kycRoutes = require('./routes/kyc');
 const initializeLocationSocket = require('./sockets/locationSocket');
 const seedDatabase = require('./utils/seeder');
 
@@ -75,6 +77,8 @@ app.use('/api/commission', commissionRoutes);
 app.use('/api/services', serviceRoutes);
 app.use('/api/settlement', settlementRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/payout', payoutRoutes);
+app.use('/api/kyc', kycRoutes);
 
 // Initialize Socket.IO handlers
 initializeLocationSocket(io);

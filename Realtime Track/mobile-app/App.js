@@ -40,8 +40,11 @@ import TechnicianNavigationScreen from './src/screens/technician/TechnicianNavig
 import WithdrawalRequestScreen from './src/screens/technician/WithdrawalRequestScreen';
 import DriverScreen from './src/screens/technician/DriverScreen'; // Legacy - keep for existing tracking
 import RazorpayCheckoutScreen from './src/screens/technician/RazorpayCheckoutScreen';
+import KYCScreen from './src/screens/technician/KYCScreen';
+import VerificationPendingScreen from './src/screens/technician/VerificationPendingScreen';
 
 import authService from './src/services/authService';
+import technicianService from './src/services/technicianService';
 import { COLORS } from './src/constants/theme';
 
 const Stack = createStackNavigator();
@@ -50,6 +53,7 @@ export default function App() {
     const [isLoading, setIsLoading] = useState(true);
     const [userToken, setUserToken] = useState(null);
     const [userRole, setUserRole] = useState(null);
+    const [kycStatus, setKycStatus] = useState(null);
 
     useEffect(() => {
         const bootstrapAsync = async () => {
@@ -60,6 +64,13 @@ export default function App() {
                 if (token) {
                     const user = await authService.getUser();
                     role = user?.role || 'customer';
+
+                    if (role === 'technician') {
+                        const kycRes = await technicianService.getKYCStatus();
+                        if (kycRes.success) {
+                            setKycStatus(kycRes.kycStatus);
+                        }
+                    }
                 }
             } catch (e) {
                 console.error('Check login error:', e);
@@ -276,6 +287,16 @@ export default function App() {
                     <Stack.Screen
                         name="RazorpayCheckout"
                         component={RazorpayCheckoutScreen}
+                        options={{ headerShown: false }}
+                    />
+                    <Stack.Screen
+                        name="KYC"
+                        component={KYCScreen}
+                        options={{ headerShown: false }}
+                    />
+                    <Stack.Screen
+                        name="VerificationPending"
+                        component={VerificationPendingScreen}
                         options={{ headerShown: false }}
                     />
                 </Stack.Navigator>

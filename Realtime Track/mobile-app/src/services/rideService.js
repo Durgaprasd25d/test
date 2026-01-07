@@ -167,6 +167,25 @@ const rideService = {
                 error: error.response?.data?.error || 'Payment verification failed'
             };
         }
+    },
+    /**
+     * Get the current active ride for a customer
+     */
+    getCurrentRide: async (customerId) => {
+        try {
+            let finalId = customerId;
+            if (!finalId) {
+                const user = await authService.getUser();
+                finalId = user?.id || user?._id || user?.mobile;
+            }
+            if (!finalId) return { success: true, data: null };
+
+            const response = await axios.get(`${API_URL}/current/${finalId}`);
+            return response.data;
+        } catch (error) {
+            console.error('Error fetching current ride:', error);
+            return { success: false, error: 'Failed to fetch current ride' };
+        }
     }
 };
 

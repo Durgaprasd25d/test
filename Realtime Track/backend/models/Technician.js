@@ -40,6 +40,10 @@ const technicianSchema = new mongoose.Schema({
             type: Number,
             default: 0
         },
+        lockedAmount: {
+            type: Number,
+            default: 0
+        },
         commissionDue: {
             type: Number,
             default: 0
@@ -49,15 +53,36 @@ const technicianSchema = new mongoose.Schema({
             default: 500
         }
     },
-    documents: {
+    verification: {
         kycVerified: {
             type: Boolean,
             default: false
         },
+        adminVerified: {
+            type: Boolean,
+            default: false
+        },
+        kycStatus: {
+            type: String,
+            enum: ['NOT_STARTED', 'PENDING', 'VERIFIED', 'REJECTED'],
+            default: 'NOT_STARTED'
+        },
+        submittedAt: Date,
+        reviewedAt: Date,
+        rejectionReason: String,
+        documents: {
+            aadhaarFront: { url: String, publicId: String },
+            aadhaarBack: { url: String, publicId: String },
+            panCard: { url: String, publicId: String },
+            bankProof: { url: String, publicId: String }, // Passbook or Cancelled Cheque
+            selfie: { url: String, publicId: String }
+        },
         bankDetails: {
             accountNumber: String,
             ifscCode: String,
-            accountHolderName: String
+            accountHolderName: String,
+            bankName: String,
+            branchName: String
         }
     }
 }, {

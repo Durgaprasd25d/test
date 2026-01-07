@@ -34,6 +34,8 @@ router.get('/', async (req, res) => {
             balance: technician.wallet.balance,
             commissionDue: technician.wallet.commissionDue,
             codLimit: technician.wallet.codLimit,
+            kycVerified: technician.verification.kycVerified,
+            adminVerified: technician.verification.adminVerified,
             transactions: formattedTransactions
         });
     } catch (error) {
@@ -125,57 +127,62 @@ router.post('/withdraw', async (req, res) => {
             });
         }
 
-        // 2. Check for KYC verification (DISABLED to allow Admin Verification)
-        // if (!technician.documents?.kycVerified) {
-        //     return res.status(400).json({
-        //         success: false,
-        //         error: 'KYC_NOT_VERIFIED',
-        //         message: 'Your account must be KYC verified to withdraw funds.'
-        //     });
-        // }
-
-        // 3. Check for sufficient balance (considering other pending requests)
-        const pendingRequests = await WithdrawalRequest.find({
-            technician: userId,
-            status: { $in: ['pending', 'approved'] }
-        });
-
-        const pendingTotal = pendingRequests.reduce((sum, req) => sum + req.amount, 0);
-
-        if (technician.wallet.balance < (pendingTotal + amount)) {
+        // 2. Check for KYC Verification
+        if (!technician.verification?.kycVerified) {
             return res.status(400).json({
                 success: false,
-                error: 'INSUFFICIENT_FUNDS',
-                message: 'Insufficient balance. You have ₹' + (technician.wallet.balance - pendingTotal) + ' available for withdrawal.'
+                error: 'KYC_NOT_VERIFIED',
+                message: 'Please complete your KYC verification before requesting a payout.'
             });
         }
 
-        // 4. Create Withdrawal Request
-        const requestData = {
-            technician: userId,
-            amount,
-            payoutMethod: payoutMethod || 'bank',
-            status: 'pending'
-        };
+        // 3. Check for sufficient balance
+        // We check against (balance - lockedAmount)
+        const availableBalance = technician.wallet.balance;
 
-        if (payoutMethod === 'upi') {
-            if (!upiId) return res.status(400).json({ success: false, error: 'UPI ID is required' });
-            requestData.upiId = upiId;
-        } else {
-            if (!bankDetails?.accountNumber || !bankDetails?.ifscCode) {
-                return res.status(400).json({ success: false, error: 'Complete bank details are required' });
-            }
-            requestData.bankDetails = bankDetails;
+        if (availableBalance < amount) {
+            return res.status(400).json({
+                success: false,
+                error: 'INSUFFICIENT_FUNDS',
+                message: `Insufficient balance. Available to withdraw: ₹${availableBalance}`
+            });
         }
 
-        const withdrawal = await WithdrawalRequest.create(requestData);
+        // 4. Atomic Locking (Phase 4 of Pipeline)
+        // Move money from balance to lockedAmount
+        technician.wallet.balance -= amount;
+        technician.wallet.lockedAmount += amount;
+        await technician.save();
+
+        // 5. Create Withdrawal Request
+        const withdrawal = await WithdrawalRequest.create({
+            technician: technician._id,
+            amount,
+            payoutMethod: payoutMethod || 'bank',
+            status: 'pending',
+            bankDetails: payoutMethod === 'bank' ? (bankDetails || technician.verification?.bankDetails) : undefined,
+            upiId: payoutMethod === 'upi' ? upiId : undefined
+        });
+
+        // 6. Record transaction for locking
+        await Transaction.create({
+            technician: userId,
+            type: 'debit',
+            amount,
+            description: `Withdrawal request initiated (Funds Locked)`,
+            status: 'pending',
+            metadata: {
+                withdrawalId: withdrawal._id,
+                payoutMethod
+            }
+        });
 
         res.json({
             success: true,
             balance: technician.wallet.balance,
-            availableBalance: technician.wallet.balance - pendingTotal - amount,
+            lockedAmount: technician.wallet.lockedAmount,
             withdrawalId: withdrawal._id,
-            message: 'Withdrawal request submitted for admin verification.'
+            message: 'Withdrawal request submitted and funds locked for processing.'
         });
     } catch (error) {
         console.error('Withdrawal Request Error:', error);
@@ -187,7 +194,12 @@ router.post('/withdraw', async (req, res) => {
 router.get('/withdrawals', async (req, res) => {
     try {
         const userId = req.query.userId || req.user?.id;
-        const withdrawals = await WithdrawalRequest.find({ technician: userId })
+        const technician = await Technician.findOne({ userId });
+        if (!technician) {
+            return res.status(404).json({ success: false, error: 'Technician profile not found' });
+        }
+
+        const withdrawals = await WithdrawalRequest.find({ technician: technician._id })
             .sort({ createdAt: -1 })
             .limit(50);
 

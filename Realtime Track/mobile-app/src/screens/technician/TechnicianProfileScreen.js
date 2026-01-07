@@ -6,6 +6,34 @@ import { COLORS, SPACING, SHADOWS } from '../../constants/theme';
 import authService from '../../services/authService';
 
 export default function TechnicianProfileScreen({ navigation }) {
+    const [kycStatus, setKycStatus] = React.useState('LOADING');
+
+    React.useEffect(() => {
+        const unsubscribe = navigation.addListener('focus', () => {
+            fetchStatus();
+        });
+        return unsubscribe;
+    }, [navigation]);
+
+    const fetchStatus = async () => {
+        const res = await technicianService.getKYCStatus();
+        if (res.success) {
+            setKycStatus(res.kycStatus);
+        }
+    };
+
+    const getBadge = () => {
+        switch (kycStatus) {
+            case 'VERIFIED': return { label: 'Verified', color: COLORS.success };
+            case 'PENDING': return { label: 'Pending', color: COLORS.warning };
+            case 'REJECTED': return { label: 'Rejected', color: COLORS.error };
+            case 'NOT_STARTED': return { label: 'Not Started', color: COLORS.grey };
+            default: return null;
+        }
+    };
+
+    const badge = getBadge();
+
     return (
         <SafeAreaView style={styles.container}>
             <View style={styles.header}>
@@ -27,9 +55,15 @@ export default function TechnicianProfileScreen({ navigation }) {
 
                 <View style={styles.section}>
                     <MenuItem icon="person-outline" label="Personal Details" onPress={() => { }} />
-                    <MenuItem icon="document-text-outline" label="Documents / KYC" onPress={() => { }} badge="Verified" />
+                    <MenuItem
+                        icon="document-text-outline"
+                        label="Documents / KYC"
+                        onPress={() => navigation.navigate('KYC')}
+                        badge={badge?.label}
+                        badgeColor={badge?.color}
+                    />
                     <MenuItem icon="lock-closed-outline" label="Passwords" onPress={() => { }} />
-                    <MenuItem icon="card-outline" label="Bank Details" onPress={() => { }} />
+                    <MenuItem icon="card-outline" label="Bank Details" onPress={() => navigation.navigate('Withdrawal')} />
                 </View>
 
                 <View style={styles.section}>
@@ -44,12 +78,16 @@ export default function TechnicianProfileScreen({ navigation }) {
     );
 }
 
-function MenuItem({ icon, label, onPress, badge, color }) {
+function MenuItem({ icon, label, onPress, badge, badgeColor, color }) {
     return (
         <TouchableOpacity style={styles.menuItem} onPress={onPress}>
             <Ionicons name={icon} size={22} color={color || COLORS.technicianPrimary} />
             <Text style={[styles.menuLabel, color && { color }]}>{label}</Text>
-            {badge && <View style={styles.badge}><Text style={styles.badgeText}>{badge}</Text></View>}
+            {badge && (
+                <View style={[styles.badge, badgeColor && { backgroundColor: badgeColor }]}>
+                    <Text style={styles.badgeText}>{badge}</Text>
+                </View>
+            )}
             <Ionicons name="chevron-forward" size={20} color={COLORS.grey} style={{ marginLeft: 'auto' }} />
         </TouchableOpacity>
     );

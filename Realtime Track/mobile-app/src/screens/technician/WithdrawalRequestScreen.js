@@ -28,7 +28,7 @@ export default function WithdrawalRequestScreen({ navigation }) {
         branchName: ''
     });
     const [upiId, setUpiId] = useState('');
-    const [walletInfo, setWalletInfo] = useState({ balance: 0, commissionDue: 0, kycVerified: false });
+    const [walletInfo, setWalletInfo] = useState({ balance: 0, lockedAmount: 0, commissionDue: 0, kycVerified: false, adminVerified: false });
     const [loading, setLoading] = useState(true);
     const [submitting, setSubmitting] = useState(false);
     const [isIFSCValidating, setIsIFSCValidating] = useState(false);
@@ -46,12 +46,14 @@ export default function WithdrawalRequestScreen({ navigation }) {
             if (result.success) {
                 setWalletInfo({
                     balance: result.balance,
+                    lockedAmount: result.lockedAmount || 0,
                     commissionDue: result.commissionDue,
-                    kycVerified: dashResult.technician?.documents?.kycVerified || false
+                    kycVerified: result.kycVerified || false,
+                    adminVerified: result.adminVerified || false
                 });
 
                 // Pre-fill bank details if available
-                const existingBank = dashResult.technician?.documents?.bankDetails || {};
+                const existingBank = dashResult?.data?.wallet?.bankDetails || dashResult?.technician?.verification?.bankDetails || {};
                 setBankDetails(prev => ({
                     ...prev,
                     ...existingBank,
@@ -163,7 +165,7 @@ export default function WithdrawalRequestScreen({ navigation }) {
         );
     }
 
-    const canSubmit = isFormValid() && !submitting && walletInfo.commissionDue === 0;
+    const canSubmit = isFormValid() && !submitting && walletInfo.commissionDue === 0 && walletInfo.kycVerified;
 
     return (
         <SafeAreaView style={styles.container}>
@@ -181,25 +183,37 @@ export default function WithdrawalRequestScreen({ navigation }) {
             >
                 <ScrollView contentContainerStyle={styles.scrollContent}>
                     {/* Warning Banner replacing Blocker */}
-                    {(!walletInfo.kycVerified || walletInfo.commissionDue > 0) && (
+                    {(!walletInfo.kycVerified || !walletInfo.adminVerified || walletInfo.commissionDue > 0) && (
                         <View style={[styles.blockerCard, { backgroundColor: COLORS.warning + '10', borderColor: COLORS.warning + '30' }]}>
                             <Ionicons name="information-circle-outline" size={32} color={COLORS.warning} />
                             <View style={{ flex: 1 }}>
                                 <Text style={[styles.blockerTitle, { color: COLORS.warning }]}>
-                                    {!walletInfo.kycVerified ? 'KYC Pending' : 'Dues Pending'}
+                                    {!walletInfo.kycVerified ? 'KYC Required' :
+                                        !walletInfo.adminVerified ? 'Payout Verification' :
+                                            'Dues Pending'}
                                 </Text>
                                 <Text style={styles.blockerText}>
                                     {!walletInfo.kycVerified
-                                        ? 'Admin will verify KYC manually before processing.'
-                                        : `Clear Commission Dues (₹${walletInfo.commissionDue})`}
+                                        ? 'Please complete your KYC documents and wait for approval.'
+                                        : !walletInfo.adminVerified
+                                            ? 'Your account is being verified for payouts by Admin.'
+                                            : `Clear Commission Dues (₹${walletInfo.commissionDue})`}
                                 </Text>
                             </View>
                         </View>
                     )}
 
-                    <View style={styles.balanceSummary}>
-                        <Text style={styles.balanceLabel}>Available Balance</Text>
-                        <Text style={styles.balanceValue}>₹{walletInfo.balance.toLocaleString()}</Text>
+                    <View style={styles.summaryContainer}>
+                        <View style={styles.balanceSummary}>
+                            <Text style={styles.balanceLabel}>Available Balance</Text>
+                            <Text style={styles.balanceValue}>₹{walletInfo.balance.toLocaleString()}</Text>
+                        </View>
+                        {walletInfo.lockedAmount > 0 && (
+                            <View style={styles.lockedSummary}>
+                                <Ionicons name="lock-closed" size={16} color={COLORS.grey} />
+                                <Text style={styles.lockedText}>Processing: ₹{walletInfo.lockedAmount.toLocaleString()}</Text>
+                            </View>
+                        )}
                     </View>
 
                     <View style={styles.inputSection}>
@@ -352,7 +366,22 @@ const styles = StyleSheet.create({
         ...SHADOWS.medium
     },
     balanceLabel: { color: COLORS.white, opacity: 0.8, fontSize: 14, marginBottom: 5 },
-    balanceValue: { color: COLORS.white, fontSize: 36, fontWeight: '900' },
+    balanceValue: { color: COLORS.white, fontSize: 32, fontWeight: '900' },
+    summaryContainer: { marginBottom: 25 },
+    lockedSummary: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: COLORS.greyLight,
+        paddingVertical: 8,
+        borderRadius: 12,
+        marginTop: -15,
+        marginHorizontal: 40,
+        gap: 8,
+        borderWidth: 1,
+        borderColor: COLORS.greyLight
+    },
+    lockedText: { fontSize: 13, color: COLORS.grey, fontWeight: '600' },
     inputSection: { marginBottom: 25 },
     sectionTitle: { fontSize: 18, fontWeight: 'bold', color: COLORS.black, marginBottom: 15 },
     amountBox: {

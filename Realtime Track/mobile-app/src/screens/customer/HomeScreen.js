@@ -16,6 +16,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { COLORS, SPACING, SHADOWS } from '../../constants/theme';
 import config from '../../constants/config';
 import authService from '../../services/authService';
+import rideService from '../../services/rideService';
+import customerSocketService from '../../services/customerSocketService';
 
 const { width } = Dimensions.get('window');
 
@@ -43,11 +45,52 @@ export default function HomeScreen({ navigation }) {
     const [user, setUser] = useState(null);
     const [categories, setCategories] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [activeRide, setActiveRide] = useState(null);
 
     useEffect(() => {
-        loadUser();
+        initHome();
+
+        const unsubscribe = navigation.addListener('focus', () => {
+            checkActiveRide();
+        });
+        return () => {
+            unsubscribe();
+            customerSocketService.disconnect();
+        };
+    }, [navigation]);
+
+    const initHome = async () => {
+        const userData = await authService.getUser();
+        setUser(userData);
         fetchCategories();
-    }, []);
+        checkActiveRide();
+
+        const userId = userData?.id || userData?._id;
+        if (userId) {
+            customerSocketService.connect(null, null, null, userId);
+            customerSocketService.registerHandlers(
+                // Ride Completed Handler
+                (data) => {
+                    console.log('Home: Ride completed', data);
+                    setActiveRide(null);
+                },
+                // Ride Cancelled Handler
+                (data) => {
+                    console.log('Home: Ride cancelled', data);
+                    setActiveRide(null);
+                }
+            );
+        }
+    };
+
+    const checkActiveRide = async () => {
+        const res = await rideService.getCurrentRide();
+        if (res.success && res.data) {
+            setActiveRide(res.data);
+        } else {
+            setActiveRide(null);
+        }
+    };
 
     const loadUser = async () => {
         const userData = await authService.getUser();
@@ -210,6 +253,35 @@ export default function HomeScreen({ navigation }) {
                     <Text style={styles.navText}>Profile</Text>
                 </TouchableOpacity>
             </View>
+
+            {/* Floating Active Booking Button */}
+            {activeRide && (
+                <TouchableOpacity
+                    style={styles.floatingActiveBtn}
+                    onPress={() => navigation.navigate('ServiceStatus', {
+                        rideId: activeRide.rideId,
+                        serviceType: activeRide.serviceType
+                    })}
+                >
+                    <LinearGradient
+                        colors={[PREMIUM_COLORS.indigo, PREMIUM_COLORS.violet]}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 0 }}
+                        style={styles.floatingGradient}
+                    >
+                        <View style={styles.floatingIcon}>
+                            <Ionicons name="time-outline" size={24} color="#fff" />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                            <Text style={styles.floatingStatus}>TRACKING SERVICE</Text>
+                            <Text style={styles.floatingTitle} numberOfLines={1}>
+                                {activeRide.serviceType.toUpperCase()} • {activeRide.status.replace('_', ' ')}
+                            </Text>
+                        </View>
+                        <Ionicons name="chevron-forward" size={20} color="#fff" />
+                    </LinearGradient>
+                </TouchableOpacity>
+            )}
         </View>
     );
 }
@@ -478,6 +550,43 @@ const styles = StyleSheet.create({
         height: 4,
         borderRadius: 2,
         backgroundColor: PREMIUM_COLORS.indigo,
+        marginTop: 2,
+    },
+    // Floating Button Styles
+    floatingActiveBtn: {
+        position: 'absolute',
+        bottom: 110, // Above bottom nav
+        left: 20,
+        right: 20,
+        borderRadius: 20,
+        ...SHADOWS.heavy,
+        overflow: 'hidden',
+    },
+    floatingGradient: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        padding: 15,
+        gap: 12,
+    },
+    floatingIcon: {
+        width: 44,
+        height: 44,
+        borderRadius: 12,
+        backgroundColor: 'rgba(255,255,255,0.2)',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    floatingStatus: {
+        fontSize: 10,
+        fontWeight: '900',
+        color: '#fff',
+        opacity: 0.8,
+        letterSpacing: 1,
+    },
+    floatingTitle: {
+        fontSize: 15,
+        fontWeight: 'bold',
+        color: '#fff',
         marginTop: 2,
     },
 });

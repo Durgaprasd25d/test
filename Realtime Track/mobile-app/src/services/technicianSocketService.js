@@ -14,6 +14,7 @@ class TechnicianSocketService {
         this.isConnected = false;
         this.onJobRequest = null;
         this.onJobCancelled = null;
+        this.onJobCompleted = null;
         this.onConnectionChange = null;
     }
 
@@ -23,8 +24,9 @@ class TechnicianSocketService {
      * @param {function} onJobRequest - Callback when new job is requested
      * @param {function} onJobCancelled - Callback when a job is cancelled
      * @param {function} onConnectionChange - Callback for connection status
+     * @param {function} onJobCompleted - Callback when a job is completed
      */
-    connect(userId, onJobRequest, onJobCancelled, onConnectionChange) {
+    connect(userId, onJobRequest, onJobCancelled, onConnectionChange, onJobCompleted) {
         if (this.socket) {
             this.disconnect();
         }
@@ -32,6 +34,7 @@ class TechnicianSocketService {
         this.onJobRequest = onJobRequest;
         this.onJobCancelled = onJobCancelled;
         this.onConnectionChange = onConnectionChange;
+        this.onJobCompleted = onJobCompleted;
 
         console.log('Technician connecting to socket:', config.SOCKET_URL);
 
@@ -91,6 +94,14 @@ class TechnicianSocketService {
             console.log('❌ Job cancelled (user room):', data);
             if (this.onJobCancelled) {
                 this.onJobCancelled(data);
+            }
+        });
+
+        // Listen for job completion
+        this.socket.on('ride:completed', (data) => {
+            console.log('✅ Ride completed received:', data);
+            if (this.onJobCompleted) {
+                this.onJobCompleted(data);
             }
         });
     }

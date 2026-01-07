@@ -12,22 +12,31 @@ class CustomerSocketService {
         this.socket = null;
         this.isConnected = false;
         this.rideId = null;
+        this.userId = null;
         this.onLocationUpdate = null;
         this.onConnectionChange = null;
+        this.onRideCompleted = null;
+        this.onRideCancelled = null;
     }
 
     /**
      * Connect to WebSocket server
-     * @param {string} rideId - Ride identifier
+     * @param {string} rideId - Ride identifier (optional)
      * @param {function} onLocationUpdate - Callback for location updates
      * @param {function} onConnectionChange - Callback for connection status
+     * @param {string} userId - User identifier for private room (optional)
      */
-    connect(rideId, onLocationUpdate, onConnectionChange) {
+    connect(rideId, onLocationUpdate, onConnectionChange, userId) {
         if (this.socket) {
+            // If already connected with same IDs, don't reconnect
+            if (this.rideId === rideId && this.userId === userId && this.socket.connected) {
+                return this.socket;
+            }
             this.disconnect();
         }
 
         this.rideId = rideId;
+        this.userId = userId;
         this.onLocationUpdate = onLocationUpdate;
         this.onConnectionChange = onConnectionChange;
 
@@ -56,6 +65,7 @@ class CustomerSocketService {
             console.log('Customer socket connected');
             this.isConnected = true;
             this.joinRide();
+            this.identifyUser();
             this.notifyConnectionChange('connected');
         });
 
@@ -97,6 +107,16 @@ class CustomerSocketService {
             this.handleLocationUpdate(data);
         });
 
+        this.socket.on('ride:completed', (data) => {
+            console.log('🏁 Ride completed event received:', data);
+            if (this.onRideCompleted) this.onRideCompleted(data);
+        });
+
+        this.socket.on('ride:cancelled', (data) => {
+            console.log('🚫 Ride cancelled event received:', data);
+            if (this.onRideCancelled) this.onRideCancelled(data);
+        });
+
         this.socket.on('error', (error) => {
             console.error('Socket error:', error);
         });
@@ -121,6 +141,23 @@ class CustomerSocketService {
 
         this.socket.emit('customer:join', { rideId: this.rideId });
         console.log('Customer joining ride:', this.rideId);
+    }
+
+    /**
+     * Identify user to join private room
+     */
+    identifyUser() {
+        if (!this.socket || !this.userId) return;
+        this.socket.emit('identify', { userId: this.userId });
+        console.log('Customer identified:', this.userId);
+    }
+
+    /**
+     * Register global event handlers
+     */
+    registerHandlers(onRideCompleted, onRideCancelled) {
+        this.onRideCompleted = onRideCompleted;
+        this.onRideCancelled = onRideCancelled;
     }
 
     /**

@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { COLORS, SPACING, SHADOWS } from '../../constants/theme';
+import config from '../../constants/config';
 import customerSocketService from '../../services/customerSocketService';
 
 const { width } = Dimensions.get('window');
@@ -11,10 +12,14 @@ const { width } = Dimensions.get('window');
 export default function ServiceStatusScreen({ route, navigation }) {
     const { rideId, otp, initialStep = 'in_progress', total, paymentTiming } = route?.params || {};
     const [step, setStep] = useState(initialStep); // in_progress, service_ended, completed, rating
+    const [liveStatus, setLiveStatus] = useState(null);
+    const [currentOtp, setCurrentOtp] = useState(otp);
     const [showPayButton, setShowPayButton] = useState(false);
     const [serviceAmount, setServiceAmount] = useState(total || 0);
 
     useEffect(() => {
+        fetchLatestStatus();
+
         const socket = customerSocketService.getSocket();
         if (socket) {
             socket.on('ride:service_ended', (data) => {
@@ -29,9 +34,12 @@ export default function ServiceStatusScreen({ route, navigation }) {
                 }
             });
 
-            socket.on('payment:success', () => {
+            socket.on('payment:success', (data) => {
                 setShowPayButton(false);
                 setStep('completed');
+                if (data.completionOtp) {
+                    setCurrentOtp(data.completionOtp);
+                }
             });
 
             socket.on('ride:completed', () => {
@@ -48,6 +56,35 @@ export default function ServiceStatusScreen({ route, navigation }) {
         };
     }, []);
 
+    const fetchLatestStatus = async () => {
+        try {
+            const res = await fetch(`${config.BACKEND_URL}/api/ride/${rideId}`);
+            const result = await res.json();
+            if (result.success) {
+                const data = result.data;
+                setLiveStatus(data);
+
+                // State recovery logic
+                if (data.status === 'COMPLETED') {
+                    setStep('completed');
+                } else if (data.status === 'IN_PROGRESS' || data.status === 'ARRIVED') {
+                    // Check if completion OTP is ready (post-payment or prepaid)
+                    if (data.paymentStatus === 'PAID') {
+                        setStep('completed');
+                        setCurrentOtp(data.completionOtp);
+                    } else if (data.completionOtp && data.paymentTiming === 'POSTPAID') {
+                        // Service ended, waiting for payment
+                        setStep('service_ended');
+                        setShowPayButton(true);
+                        setServiceAmount(data.price || 1000);
+                    }
+                }
+            }
+        } catch (error) {
+            console.error('Error fetching latest status:', error);
+        }
+    };
+
     const renderInProgress = () => (
         <View style={styles.centerContainer}>
             <View style={styles.otpCard}>
@@ -57,7 +94,7 @@ export default function ServiceStatusScreen({ route, navigation }) {
                 >
                     <Text style={styles.otpLabel}>SHARE OTP WITH TECHNICIAN</Text>
                     <View style={styles.otpNumberContainer}>
-                        {otp?.toString().split('').map((char, i) => (
+                        {(currentOtp || otp)?.toString().split('').map((char, i) => (
                             <View key={i} style={styles.otpDigitBox}>
                                 <Text style={styles.otpDigitText}>{char}</Text>
                             </View>

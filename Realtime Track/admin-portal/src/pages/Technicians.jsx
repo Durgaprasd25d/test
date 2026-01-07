@@ -24,16 +24,30 @@ export default function Technicians() {
         }
     };
 
-    const verifyKYC = async (userId, verified) => {
+    const handleKycVerify = async (userId, status) => {
+        if (status === 'REJECTED') {
+            const reason = window.prompt('Reason for rejection:');
+            if (!reason) return;
+            await submitVerification(userId, 'verify-kyc', { status, reason });
+        } else {
+            if (!window.confirm('Approve KYC documents?')) return;
+            await submitVerification(userId, 'verify-kyc', { status });
+        }
+    };
+
+    const handlePayoutVerify = async (userId, isVerified) => {
+        if (!window.confirm(`Are you sure you want to ${isVerified ? 'ENABLE' : 'DISABLE'} payouts?`)) return;
+        await submitVerification(userId, 'verify-payout', { isVerified });
+    };
+
+    const submitVerification = async (userId, endpoint, data) => {
         try {
-            const response = await axios.post(`http://127.0.0.1:4000/api/admin/technicians/${userId}/verify-kyc`, {
-                verified
-            });
+            const response = await axios.post(`http://127.0.0.1:4000/api/admin/technicians/${userId}/${endpoint}`, data);
             if (response.data.success) {
                 fetchTechnicians(); // Refresh
             }
         } catch (error) {
-            alert('Failed to update verification status');
+            alert(error.response?.data?.message || 'Action failed');
         }
     };
 
@@ -58,9 +72,9 @@ export default function Technicians() {
                             onChange={(e) => setSearchTerm(e.target.value)}
                         />
                     </div>
-                    <button className="p-2 border border-gray-200 rounded-xl hover:bg-gray-50">
+                    {/* <button className="p-2 border border-gray-200 rounded-xl hover:bg-gray-50">
                         <Filter size={20} className="text-gray-600" />
-                    </button>
+                    </button> */}
                 </div>
             </div>
 
@@ -69,11 +83,12 @@ export default function Technicians() {
                     <table className="w-full text-left">
                         <thead className="bg-gray-50 border-b border-gray-100">
                             <tr>
-                                <th className="px-6 py-4 text-sm font-semibold text-gray-600">Technician</th>
-                                <th className="px-6 py-4 text-sm font-semibold text-gray-600">Contact</th>
-                                <th className="px-6 py-4 text-sm font-semibold text-gray-600">Wallet</th>
-                                <th className="px-6 py-4 text-sm font-semibold text-gray-600">KYC Status</th>
-                                <th className="px-6 py-4 text-sm font-semibold text-gray-600">Actions</th>
+                                <th className="px-6 py-4 text-sm font-semibold text-gray-600 font-black">TECHNICIAN</th>
+                                <th className="px-6 py-4 text-sm font-semibold text-gray-600 font-black">CONTACT</th>
+                                <th className="px-6 py-4 text-sm font-semibold text-gray-600 font-black">WALLET</th>
+                                <th className="px-6 py-4 text-sm font-semibold text-gray-600 font-black">KYC STATUS</th>
+                                <th className="px-6 py-4 text-sm font-semibold text-gray-600 font-black">PAYOUTS</th>
+                                <th className="px-6 py-4 text-sm font-semibold text-gray-600 font-black">ACTIONS</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100">
@@ -105,39 +120,60 @@ export default function Technicians() {
                                         </td>
                                         <td className="px-6 py-4">
                                             <p className="font-bold text-emerald-600">₹{tech.wallet?.balance?.toLocaleString() || 0}</p>
-                                            <p className="text-xs text-red-500 font-medium">Due: ₹{tech.wallet?.commissionDue?.toLocaleString() || 0}</p>
+                                            <p className="text-xs text-slate-500 font-medium">Locked: ₹{tech.wallet?.lockedAmount?.toLocaleString() || 0}</p>
                                         </td>
                                         <td className="px-6 py-4">
-                                            {tech.documents?.kycVerified ? (
-                                                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                                                    <UserCheck size={12} className="mr-1" /> Verified
+                                            {tech.verification?.kycStatus === 'VERIFIED' ? (
+                                                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800">
+                                                    Verified
+                                                </span>
+                                            ) : tech.verification?.kycStatus === 'PENDING' ? (
+                                                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-orange-100 text-orange-800">
+                                                    Pending Rev.
                                                 </span>
                                             ) : (
-                                                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">
-                                                    <UserX size={12} className="mr-1" /> Pending
+                                                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-slate-100 text-slate-800">
+                                                    {tech.verification?.kycStatus || 'Not Started'}
                                                 </span>
                                             )}
                                         </td>
                                         <td className="px-6 py-4">
-                                            <div className="flex gap-2">
-                                                {tech.documents?.kycVerified ? (
+                                            {tech.verification?.adminVerified ? (
+                                                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-100 text-blue-800">
+                                                    Enabled
+                                                </span>
+                                            ) : (
+                                                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-slate-100 text-slate-800">
+                                                    Locked
+                                                </span>
+                                            )}
+                                        </td>
+                                        <td className="px-6 py-4">
+                                            <div className="flex flex-col gap-2">
+                                                {tech.verification?.kycStatus !== 'VERIFIED' && (
                                                     <button
-                                                        onClick={() => verifyKYC(tech.userId?._id, false)}
-                                                        className="text-xs font-bold text-red-600 hover:text-red-700"
+                                                        onClick={() => handleKycVerify(tech.userId?._id, 'VERIFIED')}
+                                                        className="text-[10px] font-black uppercase text-emerald-600 hover:bg-emerald-50 px-2 py-1 rounded-md border border-emerald-200 text-center"
                                                     >
-                                                        Unverify
-                                                    </button>
-                                                ) : (
-                                                    <button
-                                                        onClick={() => verifyKYC(tech.userId?._id, true)}
-                                                        className="bg-blue-600 text-white px-3 py-1 rounded-lg text-xs font-bold hover:bg-blue-700"
-                                                    >
-                                                        Verify KYC
+                                                        Approve KYC
                                                     </button>
                                                 )}
-                                                <button className="text-xs font-bold text-gray-500 hover:text-gray-700 ml-2">
-                                                    View Details
-                                                </button>
+                                                {tech.verification?.kycStatus === 'VERIFIED' && !tech.verification?.adminVerified && (
+                                                    <button
+                                                        onClick={() => handlePayoutVerify(tech.userId?._id, true)}
+                                                        className="text-[10px] font-black uppercase text-blue-600 hover:bg-blue-50 px-2 py-1 rounded-md border border-blue-200 text-center"
+                                                    >
+                                                        Unlock Payout
+                                                    </button>
+                                                )}
+                                                {tech.verification?.adminVerified && (
+                                                    <button
+                                                        onClick={() => handlePayoutVerify(tech.userId?._id, false)}
+                                                        className="text-[10px] font-black uppercase text-red-500 hover:bg-red-50 px-2 py-1 rounded-md border border-red-100 text-center"
+                                                    >
+                                                        Lock Payout
+                                                    </button>
+                                                )}
                                             </div>
                                         </td>
                                     </tr>

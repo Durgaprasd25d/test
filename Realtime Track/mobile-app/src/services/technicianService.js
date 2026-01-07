@@ -168,6 +168,19 @@ export const addMoney = async (amount, paymentMethod, transactionId) => {
     }
 };
 
+export const withdrawMoneyEnhanced = async (payload) => {
+    try {
+        const userId = await getUserId();
+        const response = await axios.post(`${API_URL}/api/wallet/withdraw`, payload, {
+            params: { userId }
+        });
+        return response.data;
+    } catch (error) {
+        console.error('Withdraw enhanced error:', error);
+        return { success: false, error: error.message };
+    }
+};
+
 export const withdrawMoney = async (amount, bankDetails) => {
     try {
         const userId = await getUserId();
@@ -255,15 +268,28 @@ export const verifySettlementPayment = async (paymentData) => {
     }
 };
 
-export const withdrawMoneyEnhanced = async (payload) => {
+export const getKYCStatus = async () => {
     try {
         const userId = await getUserId();
-        const response = await axios.post(`${API_URL}/api/wallet/withdraw`, payload, {
+        const response = await axios.get(`${API_URL}/api/kyc/status`, {
             params: { userId }
         });
         return response.data;
     } catch (error) {
-        console.error('Withdraw enhanced error:', error);
+        console.error('Get KYC status error:', error);
+        return { success: false, error: error.message };
+    }
+};
+
+export const submitKYC = async (payload) => {
+    try {
+        const userId = await getUserId();
+        const response = await axios.post(`${API_URL}/api/kyc/submit`, payload, {
+            params: { userId }
+        });
+        return response.data;
+    } catch (error) {
+        console.error('Submit KYC error:', error);
         return { success: false, error: error.message };
     }
 };
@@ -286,4 +312,6 @@ export default {
     verifySettlementPayment,
     getWithdrawalHistory,
     getUserData,
+    getKYCStatus,
+    submitKYC,
 };

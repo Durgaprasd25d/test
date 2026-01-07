@@ -28,6 +28,7 @@ export default function TechnicianNavigationScreen({ route, navigation }) {
     const [showOtpModal, setShowOtpModal] = useState(false);
     const [loading, setLoading] = useState(false);
     const [otpType, setOtpType] = useState('ENTRANCE'); // ENTRANCE or COMPLETION
+    const [paymentStatus, setPaymentStatus] = useState('UNPAID');
 
     const watchSubscriptionRef = useRef(null);
     const lastSentLocationRef = useRef(null);
@@ -65,6 +66,13 @@ export default function TechnicianNavigationScreen({ route, navigation }) {
                     if (socket?.connected) {
                         socket.emit('driver:join', { rideId });
                         console.log('✅ Driver joined ride room');
+
+                        // Listen for payment verification
+                        socket.on('payment:verified', (data) => {
+                            console.log('💰 Payment verified via socket:', data);
+                            setPaymentStatus('PAID');
+                            Alert.alert('Payment Received', 'The customer has successfully paid. You can now verify the completion code.');
+                        });
                     }
                 }, 500);
             }
@@ -145,6 +153,11 @@ export default function TechnicianNavigationScreen({ route, navigation }) {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ rideId, otp })
             });
+            if (response.status === 402) {
+                Alert.alert('Payment Pending', 'The customer has not completed the payment yet. Please ask them to pay first.');
+                return;
+            }
+
             const result = await response.json();
 
             if (result.success) {
@@ -190,6 +203,7 @@ export default function TechnicianNavigationScreen({ route, navigation }) {
             const result = await response.json();
             if (result.success) {
                 setOtpType('COMPLETION');
+                setPaymentStatus(result.data.paymentStatus || 'UNPAID');
                 setShowOtpModal(true);
             }
         } catch (e) { Alert.alert('Error', 'Could not end service'); }
@@ -318,7 +332,13 @@ export default function TechnicianNavigationScreen({ route, navigation }) {
                 <View style={styles.modalBg}>
                     <View style={styles.modalCard}>
                         <Text style={styles.modalTitle}>{otpType === 'ENTRANCE' ? 'Entrance Verification' : 'Job Completion'}</Text>
-                        <Text style={styles.modalSub}>{otpType === 'ENTRANCE' ? 'Enter 4-digit code provided by customer' : 'Enter 5-digit completion code'}</Text>
+                        <Text style={styles.modalSub}>
+                            {otpType === 'ENTRANCE'
+                                ? 'Enter 4-digit code provided by customer'
+                                : paymentStatus === 'PAID'
+                                    ? 'Enter 5-digit completion code provided by customer'
+                                    : 'Awaiting Payment... Code will be available on customer screen after payment.'}
+                        </Text>
 
                         <TextInput
                             style={styles.otpInput}

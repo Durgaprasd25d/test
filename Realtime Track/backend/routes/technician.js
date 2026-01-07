@@ -32,7 +32,7 @@ router.get('/dashboard', async (req, res) => {
                 activeJob: activeRide ? {
                     id: activeRide.rideId,
                     serviceType: activeRide.serviceType,
-                    location: activeRide.pickup.address,
+                    pickup: activeRide.pickup,
                     status: activeRide.status,
                     earnings: Math.round((activeRide.price || 1000) * 0.8) // 80% to technician
                 } : null,
@@ -40,7 +40,10 @@ router.get('/dashboard', async (req, res) => {
                 wallet: {
                     balance: technician.wallet.balance,
                     commissionDue: technician.wallet.commissionDue,
-                    codLimit: technician.wallet.codLimit
+                    codLimit: technician.wallet.codLimit,
+                    kycStatus: technician.verification.kycStatus,
+                    kycVerified: technician.verification.kycVerified,
+                    adminVerified: technician.verification.adminVerified
                 }
             }
         });

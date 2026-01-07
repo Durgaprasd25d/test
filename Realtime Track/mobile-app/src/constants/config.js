@@ -12,6 +12,8 @@ if (!GOOGLE_MAPS_API_KEY) {
     console.warn('⚠️ Google Maps API Key is missing! Places suggestions will not work.');
 }
 const RAZORPAY_KEYID = process.env.EXPO_PUBLIC_RAZORPAY_KEYID || 'rzp_test_RxiuviHEGyiaLv';
+const CLOUDINARY_CLOUD_NAME = process.env.EXPO_PUBLIC_CLOUDINARY_CLOUD_NAME || 'djsdp7cns';
+const CLOUDINARY_UPLOAD_PRESET = process.env.EXPO_PUBLIC_CLOUDINARY_UPLOAD_PRESET || 'zyro-ac';
 
 export default {
     // Backend
@@ -21,6 +23,10 @@ export default {
     // Google Maps
     GOOGLE_MAPS_API_KEY,
     RAZORPAY_KEYID,
+
+    // Cloudinary
+    CLOUDINARY_CLOUD_NAME,
+    CLOUDINARY_UPLOAD_PRESET,
 
     // Driver Location Updates
     DRIVER_LOCATION_INTERVAL: 2000, // 2 seconds (Uber-level response)

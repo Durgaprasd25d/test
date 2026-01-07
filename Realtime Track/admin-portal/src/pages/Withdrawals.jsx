@@ -56,6 +56,22 @@ export default function Withdrawals() {
         }
     };
 
+    const processAutomatedPayout = async (id) => {
+        if (!window.confirm('Initiate real money transfer via RazorpayX?')) return;
+
+        try {
+            const response = await axios.post(`http://127.0.0.1:4000/api/payout/process-payout`, {
+                withdrawalId: id
+            });
+            if (response.data.success) {
+                alert('Payout initiated! Transaction ID: ' + response.data.payoutId);
+                fetchRequests();
+            }
+        } catch (error) {
+            alert('Automated Payout Failed: ' + (error.response?.data?.error || error.message));
+        }
+    };
+
     return (
         <div className="space-y-6">
             <div className="flex items-center justify-between">
@@ -96,13 +112,25 @@ export default function Withdrawals() {
                                     <div className="flex items-center gap-2">
                                         <h3 className="font-bold text-slate-900">₹{req.amount.toLocaleString()}</h3>
                                         <span className={`text-[10px] font-black px-2 py-0.5 rounded uppercase ${req.status === 'pending' ? 'bg-amber-100 text-amber-700' :
-                                                req.status === 'approved' ? 'bg-blue-100 text-blue-700' :
-                                                    req.status === 'completed' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'
+                                            req.status === 'approved' ? 'bg-blue-100 text-blue-700' :
+                                                req.status === 'completed' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'
                                             }`}>
                                             {req.status}
                                         </span>
                                     </div>
-                                    <p className="text-sm font-medium text-slate-600">{req.technician?.name} ({req.technician?.mobile})</p>
+                                    <p className="text-sm font-medium text-slate-600">
+                                        {req.technician?.userId?.name || req.technician?.name} ({req.technician?.userId?.mobile || req.technician?.mobile})
+                                    </p>
+                                    <div className="flex items-center gap-2 mt-1">
+                                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${req.technician?.verification?.kycVerified ? 'bg-green-50 text-green-700 border-green-100' : 'bg-red-50 text-red-700 border-red-100'
+                                            }`}>
+                                            KYC: {req.technician?.verification?.kycStatus || 'UNKNOWN'}
+                                        </span>
+                                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${req.technician?.verification?.adminVerified ? 'bg-blue-50 text-blue-700 border-blue-100' : 'bg-amber-50 text-amber-700 border-amber-100'
+                                            }`}>
+                                            PAYOUT ACCESS: {req.technician?.verification?.adminVerified ? 'VERIFIED' : 'PENDING'}
+                                        </span>
+                                    </div>
                                     <p className="text-xs text-gray-400 mt-1">Requested on {new Date(req.createdAt).toLocaleString()}</p>
                                 </div>
                             </div>
@@ -143,12 +171,20 @@ export default function Withdrawals() {
                                 )}
 
                                 {req.status === 'approved' && (
-                                    <button
-                                        onClick={() => markPaid(req._id)}
-                                        className="bg-emerald-600 text-white px-4 py-2 rounded-xl text-sm font-bold hover:bg-emerald-700 shadow-lg shadow-emerald-600/20"
-                                    >
-                                        Mark as Paid
-                                    </button>
+                                    <div className="flex flex-col gap-2">
+                                        <button
+                                            onClick={() => processAutomatedPayout(req._id)}
+                                            className="bg-blue-600 text-white px-4 py-2 rounded-xl text-sm font-bold hover:bg-blue-700 shadow-lg shadow-blue-600/20"
+                                        >
+                                            Process RazorpayX
+                                        </button>
+                                        <button
+                                            onClick={() => markPaid(req._id)}
+                                            className="text-emerald-600 border border-emerald-100 px-4 py-2 rounded-xl text-sm font-bold hover:bg-emerald-50"
+                                        >
+                                            Mark Manual
+                                        </button>
+                                    </div>
                                 )}
 
                                 {(req.status === 'completed' || req.status === 'rejected') && (
