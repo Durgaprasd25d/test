@@ -113,8 +113,14 @@ class CustomerSocketService {
         });
 
         this.socket.on('ride:cancelled', (data) => {
-            console.log('🚫 Ride cancelled event received:', data);
-            if (this.onRideCancelled) this.onRideCancelled(data);
+            console.log('Ride cancelled:', data);
+            this.notifyListeners({ type: 'ride:cancelled', data });
+        });
+
+        // Technician cancelled (triggers re-assignment)
+        this.socket.on('technician:cancelled', (data) => {
+            console.log('Technician cancelled job:', data);
+            this.notifyListeners({ type: 'technician:cancelled', data });
         });
 
         this.socket.on('error', (error) => {

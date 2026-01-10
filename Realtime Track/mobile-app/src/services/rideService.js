@@ -202,6 +202,26 @@ const rideService = {
                 error: error.response?.data?.error || 'Failed to load receipt'
             };
         }
+    },
+
+    /**
+     * Cancel job by technician (triggers re-assignment)
+     */
+    cancelByTechnician: async (rideId, technicianId, reason) => {
+        try {
+            const response = await axios.post(`${API_URL}/cancel-by-technician`, {
+                rideId,
+                technicianId,
+                reason
+            });
+            return response.data;
+        } catch (error) {
+            console.error('Error cancelling job:', error);
+            return {
+                success: false,
+                error: error.response?.data?.error || 'Failed to cancel job'
+            };
+        }
     }
 };
 

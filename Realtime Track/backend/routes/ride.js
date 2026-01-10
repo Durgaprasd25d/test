@@ -641,6 +641,95 @@ router.get('/receipt/:rideId', async (req, res) => {
     }
 });
 
+// Cancel by Technician (with re-assignment)
+router.post('/cancel-by-technician', async (req, res) => {
+    try {
+        const { rideId, technicianId, reason } = req.body;
+
+        if (!rideId || !technicianId) {
+            return res.status(400).json({ success: false, error: 'rideId and technicianId are required' });
+        }
+
+        const ride = await Ride.findOne({ rideId });
+
+        if (!ride) {
+            return res.status(404).json({ success: false, error: 'Job not found' });
+        }
+
+        // Verify technician is assigned to this job
+        if (ride.driverId?.toString() !== technicianId) {
+            return res.status(403).json({ success: false, error: 'You are not assigned to this job' });
+        }
+
+        // Only allow cancellation if not already completed or cancelled
+        if (['COMPLETED', 'CANCELLED'].includes(ride.status)) {
+            return res.status(400).json({ success: false, error: `Job already ${ride.status.toLowerCase()}` });
+        }
+
+        const previousStatus = ride.status;
+        const cancelledReason = reason || 'Technician cancelled';
+
+        // Reset job to REQUESTED for re-assignment
+        ride.status = 'REQUESTED';
+        ride.driverId = null;
+        ride.cancellationReason = cancelledReason;
+        ride.cancelledBy = 'technician';
+        await ride.save();
+
+        const io = req.app.get('io');
+
+        // Notify customer about cancellation
+        io.to(`user:${ride.customerId}`).emit('technician:cancelled', {
+            rideId,
+            reason: cancelledReason,
+            message: 'Your assigned technician had to cancel. Finding you a replacement...'
+        });
+
+        // Re-broadcast job to all available technicians (if payment is completed)
+        if (ride.paymentStatus === 'PAID' || ride.paymentTiming === 'POSTPAID') {
+            console.log(`🔄 Re-broadcasting job ${rideId} after technician cancellation`);
+
+            io.emit('ride:requested', {
+                rideId,
+                pickup: ride.pickup,
+                destination: ride.destination,
+                serviceType: ride.serviceType,
+                paymentMethod: ride.paymentMethod,
+                paymentTiming: ride.paymentTiming
+            });
+
+            // Send push notifications to technicians
+            const Technician = require('../models/Technician');
+            const User = require('../models/User');
+            const { sendPushNotification } = require('../services/notificationService');
+
+            const technicians = await User.find({
+                role: 'technician',
+                fcmToken: { $ne: null },
+                _id: { $ne: technicianId } // Exclude the cancelling technician
+            }).select('fcmToken');
+
+            const tokens = technicians.map(t => t.fcmToken);
+            if (tokens.length > 0) {
+                await sendPushNotification(tokens, {
+                    title: 'Urgent Job Available 🛠️',
+                    body: `A ${ride.serviceType} service needs immediate attention!`,
+                    data: { rideId, type: 'JOB_REASSIGNED' }
+                });
+            }
+        }
+
+        res.json({
+            success: true,
+            message: 'Job cancelled and re-assigned successfully',
+            rebroadcasted: ride.paymentStatus === 'PAID' || ride.paymentTiming === 'POSTPAID'
+        });
+    } catch (error) {
+        console.error('Technician cancel job error:', error);
+        res.status(500).json({ success: false, error: 'Server error' });
+    }
+});
+
 // Cancel a ride (Job)
 router.post('/cancel', async (req, res) => {
     try {

@@ -29,6 +29,18 @@ export default function TechnicianNavigationScreen({ route, navigation }) {
     const [loading, setLoading] = useState(false);
     const [otpType, setOtpType] = useState('ENTRANCE'); // ENTRANCE or COMPLETION
     const [paymentStatus, setPaymentStatus] = useState('UNPAID');
+    const [showCancelModal, setShowCancelModal] = useState(false);
+    const [cancelReason, setCancelReason] = useState('');
+    const [cancelling, setCancelling] = useState(false);
+
+    const CANCEL_REASONS = [
+        "Customer not at location",
+        "Unable to reach destination",
+        "Vehicle breakdown",
+        "Emergency situation",
+        "Other urgent matter",
+        "Other"
+    ];
 
     const watchSubscriptionRef = useRef(null);
     const lastSentLocationRef = useRef(null);
@@ -97,6 +109,39 @@ export default function TechnicianNavigationScreen({ route, navigation }) {
             }
         } catch (error) {
             console.error('Route error:', error);
+        }
+    };
+
+    const handleCancelJob = async () => {
+        if (!cancelReason) {
+            Alert.alert('Required', 'Please select a reason for cancellation');
+            return;
+        }
+
+        setCancelling(true);
+        try {
+            const user = await require('../../services/authService').default.getUser();
+            const response = await require('../../services/rideService').default.cancelByTechnician(
+                rideId,
+                user.id,
+                cancelReason
+            );
+
+            setCancelling(false);
+
+            if (response.success) {
+                setShowCancelModal(false);
+                Alert.alert(
+                    'Job Cancelled',
+                    'The job has been cancelled and reassigned to other technicians.',
+                    [{ text: 'OK', onPress: () => navigation.navigate('TechnicianDashboard') }]
+                );
+            } else {
+                Alert.alert('Error', response.error || 'Failed to cancel job');
+            }
+        } catch (error) {
+            setCancelling(false);
+            Alert.alert('Error', 'Failed to cancel job. Please try again.');
         }
     };
 
@@ -308,11 +353,24 @@ export default function TechnicianNavigationScreen({ route, navigation }) {
                         <Text style={styles.btnText}>START SERVICE</Text>
                     </TouchableOpacity>
                 )}
-
-                {rideStatus === 'IN_PROGRESS' && (
-                    <TouchableOpacity style={[styles.btn, styles.endServiceBtn]} onPress={handleEndService}>
-                        <Ionicons name="checkmark-circle" size={20} color={COLORS.white} />
+                {(rideStatus === 'ARRIVED' || rideStatus === 'IN_PROGRESS') && (
+                    <TouchableOpacity
+                        style={[styles.btn, styles.secondaryBtn]}
+                        onPress={handleEndService}
+                    >
+                        <Ionicons name="checkmark-done" size={20} color={COLORS.white} />
                         <Text style={styles.btnText}>END SERVICE</Text>
+                    </TouchableOpacity>
+                )}
+
+                {/* Cancel Job Button - Only show for ACCEPTED or ARRIVED status */}
+                {(rideStatus === 'ACCEPTED' || rideStatus === 'ARRIVED') && (
+                    <TouchableOpacity
+                        style={[styles.btn, styles.dangerBtn]}
+                        onPress={() => setShowCancelModal(true)}
+                    >
+                        <Ionicons name="close-circle-outline" size={20} color="#fff" />
+                        <Text style={styles.btnText}>CANCEL JOB</Text>
                     </TouchableOpacity>
                 )}
 
@@ -359,6 +417,57 @@ export default function TechnicianNavigationScreen({ route, navigation }) {
 
                         <TouchableOpacity style={styles.cancelBtn} onPress={() => setShowOtpModal(false)}>
                             <Text style={styles.cancelBtnText}>CANCEL</Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            </Modal>
+
+            {/* Cancel Job Modal */}
+            <Modal visible={showCancelModal} transparent animationType="slide">
+                <View style={styles.modalBg}>
+                    <View style={styles.modalCard}>
+                        <Text style={styles.modalTitle}>Cancel This Job?</Text>
+                        <Text style={styles.modalSub}>Please select a reason for cancellation:</Text>
+
+                        {CANCEL_REASONS.map((reason, index) => (
+                            <TouchableOpacity
+                                key={index}
+                                style={[
+                                    styles.reasonOption,
+                                    cancelReason === reason && styles.reasonOptionSelected
+                                ]}
+                                onPress={() => setCancelReason(reason)}
+                            >
+                                <View style={styles.radioCircle}>
+                                    {cancelReason === reason && <View style={styles.radioInner} />}
+                                </View>
+                                <Text style={[
+                                    styles.reasonText,
+                                    cancelReason === reason && styles.reasonTextSelected
+                                ]}>{reason}</Text>
+                            </TouchableOpacity>
+                        ))}
+
+                        <TouchableOpacity
+                            style={[styles.verifyBtn, { backgroundColor: '#ef4444' }]}
+                            onPress={handleCancelJob}
+                            disabled={cancelling}
+                        >
+                            {cancelling ? (
+                                <ActivityIndicator color={COLORS.white} />
+                            ) : (
+                                <Text style={styles.verifyBtnText}>CONFIRM CANCELLATION</Text>
+                            )}
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                            style={styles.cancelBtn}
+                            onPress={() => {
+                                setShowCancelModal(false);
+                                setCancelReason('');
+                            }}
+                        >
+                            <Text style={styles.cancelBtnText}>KEEP JOB</Text>
                         </TouchableOpacity>
                     </View>
                 </View>
@@ -473,10 +582,48 @@ const styles = StyleSheet.create({
         marginTop: SPACING.md,
         padding: SPACING.md,
     },
-    cancelBtnText: {
-        color: COLORS.grey,
+    cancelBtnText: { fontSize: 14, color: COLORS.grey, fontWeight: '600' },
+
+    // Cancel Job Styles
+    dangerBtn: { backgroundColor: '#ef4444' },
+    secondaryBtn: { backgroundColor: '#6b7280' },
+    reasonOption: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        padding: SPACING.md,
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: '#e5e7eb',
+        marginBottom: SPACING.sm,
+    },
+    reasonOptionSelected: {
+        backgroundColor: '#eff6ff',
+        borderColor: COLORS.technicianPrimary,
+    },
+    radioCircle: {
+        width: 20,
+        height: 20,
+        borderRadius: 10,
+        borderWidth: 2,
+        borderColor: '#d1d5db',
+        marginRight: SPACING.md,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    radioInner: {
+        width: 10,
+        height: 10,
+        borderRadius: 5,
+        backgroundColor: COLORS.technicianPrimary,
+    },
+    reasonText: {
         fontSize: 14,
+        color: COLORS.textMain,
+        flex: 1,
+    },
+    reasonTextSelected: {
         fontWeight: '600',
+        color: COLORS.technicianPrimary,
     },
 
 });

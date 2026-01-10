@@ -293,6 +293,36 @@ export default function CustomerScreen({ route, navigation }) {
                 setTimeout(() => navigation.navigate('Home'), 2500);
             });
 
+            socket.on('technician:cancelled', (data) => {
+                console.log('🚫 Technician cancelled - clearing all data');
+                setAssignedTech(null);
+                setEntranceOtp(null);
+                setMainOtp(null);
+                setCurrentLocation(null);
+                setPreviousLocation(null);
+                setRideStatus('REQUESTED');
+                setStatusMessage('Searching for replacement technician...');
+
+                Alert.alert(
+                    'Technician Unavailable ⚠️',
+                    data.message || 'Your assigned technician had to cancel. We\'re finding you a replacement immediately.',
+                    [
+                        {
+                            text: 'Cancel Booking',
+                            style: 'destructive',
+                            onPress: () => handleCancelRide('Technician cancelled, no replacement wanted')
+                        },
+                        {
+                            text: 'Find Replacement',
+                            style: 'default'
+                        }
+                    ]
+                );
+
+                // Restart fetching online technicians
+                fetchOnlineTechnicians();
+            });
+
             return () => {
                 socket.off('ride:accepted');
                 socket.off('ride:arrived');
