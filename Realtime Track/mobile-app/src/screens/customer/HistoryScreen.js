@@ -77,7 +77,7 @@ export default function HistoryScreen({ navigation }) {
                     if (item.status !== 'COMPLETED' && item.status !== 'CANCELLED') {
                         navigation.navigate('Customer', { rideId: item.rideId });
                     } else if (item.status === 'COMPLETED') {
-                        navigation.navigate('ServiceStatus', { rideId: item.rideId, initialStep: 'completed' });
+                        navigation.navigate('Receipt', { rideId: item.rideId });
                     }
                 }}
             >

@@ -561,6 +561,86 @@ router.get('/current/:customerId', async (req, res) => {
     }
 });
 
+// Get Receipt/Bill for a completed ride
+router.get('/receipt/:rideId', async (req, res) => {
+    try {
+        const { rideId } = req.params;
+        const ride = await Ride.findOne({ rideId })
+            .populate('customerId', 'name mobile email')
+            .populate('driverId', 'name mobile');
+
+        if (!ride) {
+            return res.status(404).json({ success: false, error: 'Receipt not found' });
+        }
+
+        // Calculate billing breakdown
+        const serviceCharge = ride.price || 0;
+        const platformFee = Math.round(serviceCharge * 0.05); // 5% platform fee
+        const gst = Math.round((serviceCharge + platformFee) * 0.18); // 18% GST
+        const totalAmount = serviceCharge + platformFee + gst;
+
+        // Fetch technician details if available
+        let technicianInfo = null;
+        if (ride.driverId) {
+            technicianInfo = {
+                name: ride.driverId.name,
+                phone: ride.driverId.mobile
+            };
+        }
+
+        // Structure receipt data
+        const receiptData = {
+            // Booking Info
+            bookingId: ride.rideId,
+            serviceType: ride.serviceType,
+            bookingDate: ride.createdAt,
+            location: ride.pickup?.address,
+            status: ride.status,
+
+            // Customer Info
+            customer: {
+                name: ride.customerId?.name,
+                phone: ride.customerId?.mobile,
+                email: ride.customerId?.email
+            },
+
+            // Technician Info
+            technician: technicianInfo,
+
+            // Billing Breakdown
+            billing: {
+                serviceCharge,
+                platformFee,
+                gst,
+                gstPercentage: 18,
+                totalAmount
+            },
+
+            // Payment Info
+            payment: {
+                method: ride.paymentMethod,
+                status: ride.paymentStatus,
+                timing: ride.paymentTiming,
+                transactionId: ride.razorpayDetails?.paymentId,
+                paidAt: ride.razorpayDetails?.paidAt
+            },
+
+            // Company Info
+            company: {
+                name: 'Zyro AC',
+                website: 'https://www.zyroac.com/',
+                email: 'support@zyroac.com',
+                phone: '+91 98765 43210'
+            }
+        };
+
+        res.json({ success: true, data: receiptData });
+    } catch (error) {
+        console.error('Fetch receipt error:', error);
+        res.status(500).json({ success: false, error: 'Failed to generate receipt' });
+    }
+});
+
 // Cancel a ride (Job)
 router.post('/cancel', async (req, res) => {
     try {

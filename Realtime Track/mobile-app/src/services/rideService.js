@@ -186,6 +186,22 @@ const rideService = {
             console.error('Error fetching current ride:', error);
             return { success: false, error: 'Failed to fetch current ride' };
         }
+    },
+
+    /**
+     * Get receipt/bill for a completed service
+     */
+    getReceipt: async (rideId) => {
+        try {
+            const response = await axios.get(`${API_URL}/receipt/${rideId}`);
+            return response.data;
+        } catch (error) {
+            console.error('Error fetching receipt:', error);
+            return {
+                success: false,
+                error: error.response?.data?.error || 'Failed to load receipt'
+            };
+        }
     }
 };
 

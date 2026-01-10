@@ -20,6 +20,7 @@ import ServiceStatusScreen from './src/screens/customer/ServiceStatusScreen';
 import HistoryScreen from './src/screens/customer/HistoryScreen';
 import ProfileScreen from './src/screens/customer/ProfileScreen';
 import CustomerRazorpayCheckoutScreen from './src/screens/customer/CustomerRazorpayCheckoutScreen';
+import ReceiptScreen from './src/screens/customer/ReceiptScreen';
 
 // Technician Screens
 import TechnicianDashboardScreen from './src/screens/technician/TechnicianDashboardScreen';
@@ -199,6 +200,11 @@ export default function App() {
                     <Stack.Screen
                         name="Profile"
                         component={ProfileScreen}
+                        options={{ headerShown: false }}
+                    />
+                    <Stack.Screen
+                        name="Receipt"
+                        component={ReceiptScreen}
                         options={{ headerShown: false }}
                     />
 
