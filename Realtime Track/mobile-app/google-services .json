@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "586224586992",
+    "project_id": "reactadmin-7ab4e",
+    "storage_bucket": "reactadmin-7ab4e.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:586224586992:android:b98af0c933db61b14f7235",
+        "android_client_info": {
+          "package_name": "com.zyroac.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "586224586992-4lqa4lppekl15p3m1jdi3sisbst6ledu.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.zyroac.app",
+            "certificate_hash": "8d52ea73f9dcee0911166db9a73a3f51145b5a9d"
+          }
+        },
+        {
+          "client_id": "586224586992-b6fd79ej5rime769oeij9nh4skl4gg4o.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBIv6Qpv7d72idUB0LyviKLhkMmYllQQU8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "586224586992-5k8ndr2e4fet4kn4i0f92p69imjeq0oh.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
