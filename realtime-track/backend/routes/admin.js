@@ -5,6 +5,12 @@ const User = require('../models/User');
 const Ride = require('../models/Ride');
 const Transaction = require('../models/Transaction');
 const WithdrawalRequest = require('../models/WithdrawalRequest');
+const Razorpay = require('razorpay');
+
+const razorpay = new Razorpay({
+    key_id: process.env.RAZORPAY_KEYID,
+    key_secret: process.env.RAZORPAY_KEYSECRET,
+});
 
 /**
  * ADMIN: Dashboard Statistics
@@ -288,6 +294,136 @@ router.post('/withdrawals/:id/mark-paid', async (req, res) => {
         });
     } catch (error) {
         console.error('Payout Error:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+/**
+ * ADMIN: Get all active jobs (for Live Map)
+ */
+router.get('/active-jobs', async (req, res) => {
+    try {
+        const activeJobs = await Ride.find({
+            status: { $in: ['ACCEPTED', 'ARRIVED', 'IN_PROGRESS'] }
+        })
+            .populate('driverId', 'name mobile')
+            .populate('customerId', 'name mobile')
+            .sort({ updatedAt: -1 });
+
+        // Merge with current technician location from store
+        const locationStore = require('../services/locationStore');
+        const enrichedJobs = await Promise.all(activeJobs.map(async (job) => {
+            const location = await locationStore.getLocation(job.rideId);
+            return {
+                ...job.toObject(),
+                currentLocation: location
+            };
+        }));
+
+        res.json({
+            success: true,
+            jobs: enrichedJobs
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+/**
+ * ADMIN: List all transactions with advanced filtering
+ */
+router.get('/transactions', async (req, res) => {
+    try {
+        const {
+            type,
+            status,
+            startDate,
+            endDate,
+            page = 1,
+            limit = 20,
+            search
+        } = req.query;
+
+        let query = {};
+
+        if (type) query.type = type;
+        if (status) query.status = status;
+
+        if (startDate || endDate) {
+            query.createdAt = {};
+            if (startDate) query.createdAt.$gte = new Date(startDate);
+            if (endDate) query.createdAt.$lte = new Date(endDate);
+        }
+
+        // Search logic (ID or Description)
+        if (search) {
+            query.$or = [
+                { description: { $regex: search, $options: 'i' } },
+                { 'metadata.transactionId': { $regex: search, $options: 'i' } }
+            ];
+        }
+
+        const skip = (page - 1) * limit;
+
+        const transactions = await Transaction.find(query)
+            .populate({
+                path: 'technician',
+                select: 'name mobile',
+                model: 'User'
+            })
+            .populate('job', 'rideId price serviceType')
+            .sort({ createdAt: -1 })
+            .skip(skip)
+            .limit(parseInt(limit));
+
+        const total = await Transaction.countDocuments(query);
+
+        res.json({
+            success: true,
+            transactions,
+            pagination: {
+                total,
+                page: parseInt(page),
+                pages: Math.ceil(total / limit)
+            }
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+/**
+ * ADMIN: Get Live Payments from Razorpay directly
+ */
+router.get('/razorpay/payments', async (req, res) => {
+    try {
+        const { count = 20, skip = 0 } = req.query;
+        const payments = await razorpay.payments.all({
+            count: parseInt(count),
+            skip: parseInt(skip)
+        });
+        res.json({ success: true, payments: payments.items, total: payments.count });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+/**
+ * ADMIN: Get Live Payouts from RazorpayX (using fetch as per payout.js pattern)
+ */
+router.get('/razorpay/payouts', async (req, res) => {
+    try {
+        const { count = 20 } = req.query;
+        const response = await fetch(`https://api.razorpay.com/v1/payouts?account_number=${process.env.RAZORPAYX_ACCOUNT_NUMBER}&count=${count}`, {
+            method: 'GET',
+            headers: {
+                'Authorization': 'Basic ' + Buffer.from(process.env.RAZORPAY_KEYID + ':' + process.env.RAZORPAY_KEYSECRET).toString('base64')
+            }
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error?.description || 'Failed to fetch payouts');
+        res.json({ success: true, payouts: data.items });
+    } catch (error) {
         res.status(500).json({ success: false, error: error.message });
     }
 });

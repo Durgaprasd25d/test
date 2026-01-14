@@ -21,10 +21,14 @@ function initializeLocationSocket(io) {
          * Payload: { userId: string }
          */
         socket.on('identify', (data) => {
-            const { userId } = data;
+            const { userId, role } = data;
             if (userId) {
                 socket.join(`user:${userId}`);
                 console.log(`User ${userId} identified and joined room user:${userId}`);
+            }
+            if (role === 'admin') {
+                socket.join('admin:live_tracking');
+                console.log(`Admin ${socket.id} joined global tracking room`);
             }
         });
 
@@ -100,6 +104,12 @@ function initializeLocationSocket(io) {
 
                 // Broadcast to all customers in this ride room
                 io.to(`ride:${rideId}`).emit('customer:location:update', {
+                    rideId,
+                    location: locationData,
+                });
+
+                // ALSO: Broadcast to Admin Global Tracking Room
+                io.to('admin:live_tracking').emit('admin:location:update', {
                     rideId,
                     location: locationData,
                 });

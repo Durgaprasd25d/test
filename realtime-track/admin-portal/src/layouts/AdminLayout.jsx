@@ -9,7 +9,7 @@ import {
     LogOut,
     Menu,
     X,
-    ShieldCheck
+    ShieldCheck, Briefcase
 } from 'lucide-react';
 
 export default function AdminLayout() {
@@ -24,6 +24,8 @@ export default function AdminLayout() {
     const navItems = [
         { name: 'Dashboard', path: '/', icon: LayoutDashboard },
         { name: 'Technicians', path: '/technicians', icon: Users },
+        { name: 'Services', path: '/services', icon: Briefcase },
+        { name: 'Transactions', path: '/transactions', icon: CreditCard },
         { name: 'KYC Verification', path: '/kyc', icon: ShieldCheck },
         { name: 'Payout Requests', path: '/payouts', icon: CreditCard },
         { name: 'Live Map', path: '/map', icon: MapPin },
