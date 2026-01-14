@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { View, ActivityIndicator } from 'react-native';
+import * as Updates from 'expo-updates';
+import { View, ActivityIndicator, Alert } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -46,7 +47,8 @@ import VerificationPendingScreen from './src/screens/technician/VerificationPend
 
 import authService from './src/services/authService';
 import technicianService from './src/services/technicianService';
-import { fcmService } from './src/services/fcmService';
+// import { fcmService } from './src/services/fcmService';
+import { expoNotificationService } from './src/services/expoNotificationService';
 import { COLORS } from './src/constants/theme';
 
 const Stack = createStackNavigator();
@@ -58,6 +60,31 @@ export default function App() {
     const [kycStatus, setKycStatus] = useState(null);
 
     useEffect(() => {
+        // Silent OTA Update Check
+        async function onFetchUpdateAsync() {
+            try {
+                if (__DEV__) return; // Skip in development
+                const update = await Updates.checkForUpdateAsync();
+                if (update.isAvailable) {
+                    await Updates.fetchUpdateAsync();
+                    // Alert the user only if you want them to restart now
+                    // Otherwise it will apply on next launch silently
+                    Alert.alert(
+                        'Update Available',
+                        'A new version of Zyro AC is ready. Restart now to apply?',
+                        [
+                            { text: 'Later', style: 'cancel' },
+                            { text: 'Restart', onPress: () => Updates.reloadAsync() }
+                        ]
+                    );
+                }
+            } catch (error) {
+                console.log('Error fetching OTA update:', error);
+            }
+        }
+
+        onFetchUpdateAsync();
+
         const bootstrapAsync = async () => {
             let token;
             let role = null;
@@ -74,8 +101,10 @@ export default function App() {
                         }
                     }
 
-                    // Register FCM for logged in user
-                    fcmService.register(user.id || user._id);
+
+                    // Register Expo Push Notifications for logged in user
+                    expoNotificationService.register(user.id || user._id);
+                    // fcmService.register(user.id || user._id);
                 }
             } catch (e) {
                 console.error('Check login error:', e);

@@ -1,66 +1,53 @@
-const { admin } = require('../config/firebase');
+const { Expo } = require('expo-server-sdk');
+
+// Create a new Expo SDK client
+let expo = new Expo();
 
 /**
- * Send a push notification to specific FCM tokens
+ * Send a push notification to specific Expo Push Tokens
  * @param {string|string[]} tokens - Single token or array of tokens
  * @param {Object} payload - Notification payload { title, body, data }
  */
 const sendPushNotification = async (tokens, payload) => {
     try {
-        if (!admin || !admin.messaging()) {
-            console.warn('⚠️ Firebase Messaging is not initialized. Skipping notification.');
-            return;
-        }
-
         const messageTokens = Array.isArray(tokens) ? tokens : [tokens];
-        const filteredTokens = messageTokens.filter(t => t && t !== 'null' && t !== 'undefined');
+        const messages = [];
 
-        if (filteredTokens.length === 0) {
-            console.warn('⚠️ No valid FCM tokens provided. Skipping notification.');
-            return;
-        }
+        for (let pushToken of messageTokens) {
+            // Check that all your push tokens appear to be valid Expo push tokens
+            if (!Expo.isExpoPushToken(pushToken)) {
+                console.error(`Push token ${pushToken} is not a valid Expo push token`);
+                continue;
+            }
 
-        const message = {
-            notification: {
+            // Construct a message
+            messages.push({
+                to: pushToken,
+                sound: 'default',
                 title: payload.title,
                 body: payload.body,
-            },
-            data: payload.data || {},
-            android: {
-                priority: 'high',
-                notification: {
-                    sound: 'default',
-                    channelId: 'default',
-                    icon: 'ic_launcher', // Standard android launcher icon
-                },
-            },
-            apns: {
-                payload: {
-                    aps: {
-                        sound: 'default',
-                    },
-                },
-            },
-            tokens: filteredTokens,
-        };
-
-        const response = await admin.messaging().sendMulticast(message);
-
-        console.log(`🚀 FCM Notification Sent: ${response.successCount} success, ${response.failureCount} failure`);
-
-        if (response.failureCount > 0) {
-            const failedTokens = [];
-            response.responses.forEach((resp, idx) => {
-                if (!resp.success) {
-                    failedTokens.push(filteredTokens[idx]);
-                }
+                data: payload.data || {},
+                channelId: 'default',
             });
-            console.warn('⚠️ Failed tokens:', failedTokens);
         }
 
-        return response;
+        // The Expo push notification service accepts batches of notifications
+        let chunks = expo.chunkPushNotifications(messages);
+        let tickets = [];
+
+        for (let chunk of chunks) {
+            try {
+                let ticketChunk = await expo.sendPushNotificationsAsync(chunk);
+                console.log('🚀 Expo Notification Chunk Sent:', ticketChunk);
+                tickets.push(...ticketChunk);
+            } catch (error) {
+                console.error('❌ Expo Notification Chunk Error:', error);
+            }
+        }
+
+        return tickets;
     } catch (error) {
-        console.error('❌ FCM Notification Error:', error);
+        console.error('❌ Expo Notification Error:', error);
     }
 };
 
@@ -74,8 +61,8 @@ const sendToUser = async (userId, payload) => {
         const User = require('../models/User');
         const user = await User.findById(userId);
 
-        if (!user || !user.fcmToken) {
-            console.warn(`⚠️ User ${userId} has no FCM token. Skipping notification.`);
+        if (!user || !user.fcmToken) { // Still using fcmToken field for compatibility
+            console.warn(`⚠️ User ${userId} has no Push token. Skipping notification.`);
             return;
         }
 

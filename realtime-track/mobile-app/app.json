@@ -3,11 +3,20 @@
     "name": "Zyro AC",
     "slug": "zyro-ac",
     "version": "1.0.0",
+    "icon": "./assets/logo.png",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "assetBundlePatterns": [
       "**/*"
     ],
+    "updates": {
+      "url": "https://u.expo.dev/30693a71-c30b-493d-a2b6-8c8727017f49",
+      "checkAutomatically": "ON_LOAD",
+      "fallbackToCacheTimeout": 0
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.zyroac.app",
@@ -31,8 +40,14 @@
         "ACCESS_BACKGROUND_LOCATION",
         "FOREGROUND_SERVICE",
         "android.permission.ACCESS_COARSE_LOCATION",
-        "android.permission.ACCESS_FINE_LOCATION"
+        "android.permission.ACCESS_FINE_LOCATION",
+        "POST_NOTIFICATIONS"
       ],
+      "icon": "./assets/logo.png",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/logo.png",
+        "backgroundColor": "#FFFFFF"
+      },
       "config": {
         "googleMaps": {
           "apiKey": "AIzaSyBnA5Sw2GQC-Jt0rjH40qaGOx3vkALKWKA"
@@ -51,6 +66,16 @@
         }
       ],
       "expo-font",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/logo.png",
+          "color": "#8D5159",
+          "sounds": [
+            "./assets/notification_sound.wav"
+          ]
+        }
+      ],
       "@react-native-firebase/app",
       "@react-native-firebase/messaging",
       "@react-native-firebase/auth"
