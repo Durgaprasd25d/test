@@ -14,6 +14,7 @@ import Animated, {
 import { StatusBar } from 'expo-status-bar';
 import { COLORS } from '../constants/theme';
 import Logo from '../components/Logo';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const { width, height } = Dimensions.get('window');
 
@@ -124,8 +125,13 @@ export default function SplashScreen({ navigation }) {
 
     const letters = ["Z", "Y", "R", "O", "-", "A", "C"];
 
-    const onFinish = () => {
-        navigation.replace('Auth');
+    const onFinish = async () => {
+        const hasSeenOnboarding = await AsyncStorage.getItem('hasSeenOnboarding');
+        if (hasSeenOnboarding === 'true') {
+            navigation.replace('Auth');
+        } else {
+            navigation.replace('Onboarding');
+        }
     };
 
     useEffect(() => {
