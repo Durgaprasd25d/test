@@ -192,7 +192,15 @@ class DriverLocationService {
      * @param {object} location - Expo location object
      */
     handleLocationUpdate(location) {
-        const { latitude, longitude, speed, heading } = location.coords;
+        const { latitude, longitude, speed, heading, accuracy } = location.coords;
+
+        // ========== CRITICAL: ACCURACY FILTER ==========
+        // Reject all updates with poor accuracy (> 100m)
+        // Relaxed from 50m to reduce false rejections
+        if (accuracy > 100) {
+            console.log(`🚫 REJECTED: Poor accuracy ${accuracy.toFixed(0)}m`);
+            return;
+        }
 
         let bearing = heading;
 
@@ -208,30 +216,45 @@ class DriverLocationService {
             }
         }
 
+        // ========== STATIONARY DETECTION ==========
+        // Check if we're actually moving using SPEED + DISTANCE
+
+        const currentSpeed = speed || 0; // m/s
+        const speedKmh = currentSpeed * 3.6; // convert to km/h
+
+        let distanceMoved = 0;
+        if (this.lastSentLocation) {
+            distanceMoved = calculateDistance(
+                this.lastSentLocation,
+                { latitude, longitude }
+            );
+        }
+
+        // UBER-STYLE STATIONARY FILTER:
+        // If speed < 2 km/h AND distance < 5m → STATIONARY, don't broadcast
+        const isStationary = speedKmh < 2 && distanceMoved < 5;
+
+        if (isStationary && this.lastSentLocation) {
+            console.log(`🛑 STATIONARY: Speed ${speedKmh.toFixed(1)} km/h, Moved ${distanceMoved.toFixed(1)}m - NOT broadcasting`);
+            return;
+        }
+
         const locationData = {
             lat: latitude,
             lng: longitude,
             bearing,
-            speed: speed || 0,
+            speed: currentSpeed,
             timestamp: Date.now(),
-            accuracy: location.coords.accuracy,
+            accuracy,
         };
 
+        // Update last position for next comparison
         this.lastLocation = { latitude, longitude };
+        this.lastSentLocation = { latitude, longitude };
 
-        // Uber-level UX: We still recommend some filtering for the SERVER/CUSTOMER updates
-        // to prevent "dancing" markers due to GPS noise.
-        // However, we'll decrease the threshold to 0.5m for "Exact" feel.
-        let shouldEmit = true;
-        if (this.lastSentLocation) {
-            const movedDistance = calculateDistance(this.lastSentLocation, { latitude, longitude });
-            if (movedDistance < 0.5) { // Reduced from 2m to 0.5m for "Exact" requirement
-                shouldEmit = false;
-            }
-        }
-
-        if (shouldEmit && this.onLocationUpdate) {
-            this.lastSentLocation = { latitude, longitude };
+        // Notify callback
+        if (this.onLocationUpdate) {
+            console.log(`✅ MOVING: Speed ${speedKmh.toFixed(1)} km/h, Dist ${distanceMoved.toFixed(1)}m, Acc ${accuracy.toFixed(0)}m → BROADCASTING`);
             this.onLocationUpdate(locationData);
         }
     }

@@ -3,9 +3,12 @@ import { View, Text, StyleSheet, TouchableOpacity, Animated, Dimensions, StatusB
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import MapView, { Marker, PROVIDER_GOOGLE, AnimatedRegion } from 'react-native-maps';
+import MapViewDirections from 'react-native-maps-directions';
 import { COLORS, SPACING, SHADOWS } from '../../constants/theme';
 import config from '../../constants/config';
 import customerSocketService from '../../services/customerSocketService';
+import customerLocationService from '../../services/customerLocationService';
 
 const { width } = Dimensions.get('window');
 
@@ -16,6 +19,10 @@ export default function ServiceStatusScreen({ route, navigation }) {
     const [currentOtp, setCurrentOtp] = useState(otp);
     const [showPayButton, setShowPayButton] = useState(false);
     const [serviceAmount, setServiceAmount] = useState(total || 0);
+    const [technicianLocation, setTechnicianLocation] = useState(null);
+    const [technicianHeading, setTechnicianHeading] = useState(0);
+    const [animatedMarker, setAnimatedMarker] = useState(null);
+    const [etaData, setEtaData] = useState({ distance: '--', duration: '--' });
 
     useEffect(() => {
         fetchLatestStatus();
@@ -45,6 +52,11 @@ export default function ServiceStatusScreen({ route, navigation }) {
             socket.on('ride:completed', () => {
                 setStep('completed');
             });
+
+            // Start tracking technician location
+            if (rideId) {
+                customerLocationService.startTracking(socket, rideId, handleTechnicianLocationUpdate);
+            }
         }
 
         return () => {
@@ -53,8 +65,37 @@ export default function ServiceStatusScreen({ route, navigation }) {
                 socket.off('payment:success');
                 socket.off('ride:completed');
             }
+            customerLocationService.stopTracking();
         };
-    }, []);
+    }, [rideId]);
+
+    const handleTechnicianLocationUpdate = (location) => {
+        const { lat, lng, bearing } = location;
+
+        // Initialize AnimatedRegion on first update
+        if (!animatedMarker) {
+            const newMarker = new AnimatedRegion({
+                latitude: lat,
+                longitude: lng,
+                latitudeDelta: 0.01,
+                longitudeDelta: 0.01,
+            });
+            setAnimatedMarker(newMarker);
+            setTechnicianLocation({ latitude: lat, longitude: lng });
+        } else {
+            // Smooth 60fps animation to new position
+            animatedMarker.timing({
+                latitude: lat,
+                longitude: lng,
+                duration: 1000, // 1s to match GPS update interval
+                useNativeDriver: false
+            }).start();
+            setTechnicianLocation({ latitude: lat, longitude: lng });
+        }
+
+        setTechnicianHeading(bearing || 0);
+        console.log(`🎯 [CUSTOMER] Received location: ${lat.toFixed(6)}, ${lng.toFixed(6)}, heading: ${bearing}°`);
+    };
 
     const fetchLatestStatus = async () => {
         try {
@@ -87,6 +128,69 @@ export default function ServiceStatusScreen({ route, navigation }) {
 
     const renderInProgress = () => (
         <View style={styles.centerContainer}>
+            {/* Real-Time Tracking Map */}
+            {(liveStatus?.status === 'ACCEPTED' || liveStatus?.status === 'ARRIVED') && (
+                <View style={styles.mapContainer}>
+                    <MapView
+                        provider={PROVIDER_GOOGLE}
+                        style={styles.map}
+                        initialRegion={{
+                            latitude: liveStatus?.pickup?.lat || 20.2961,
+                            longitude: liveStatus?.pickup?.lng || 85.8245,
+                            latitudeDelta: 0.02,
+                            longitudeDelta: 0.02,
+                        }}
+                    >
+                        {/* Customer Pickup Marker */}
+                        {liveStatus?.pickup && (
+                            <Marker coordinate={{ latitude: liveStatus.pickup.lat, longitude: liveStatus.pickup.lng }}>
+                                <View style={styles.destMarker}>
+                                    <Ionicons name="home" size={24} color={COLORS.indigo} />
+                                </View>
+                            </Marker>
+                        )}
+
+                        {/* Technician Animated Marker (Smooth 60fps) */}
+                        {animatedMarker && (
+                            <Marker.Animated coordinate={animatedMarker} anchor={{ x: 0.5, y: 0.5 }}>
+                                <View style={[styles.techMarker, { transform: [{ rotate: `${technicianHeading}deg` }] }]}>
+                                    <Ionicons name="navigate" size={30} color={COLORS.indigo} />
+                                </View>
+                            </Marker.Animated>
+                        )}
+
+                        {/* Route Polyline with ETA */}
+                        {technicianLocation && liveStatus?.pickup && (
+                            <MapViewDirections
+                                origin={technicianLocation}
+                                destination={{ latitude: liveStatus.pickup.lat, longitude: liveStatus.pickup.lng }}
+                                apikey={config.GOOGLE_MAPS_API_KEY}
+                                strokeWidth={4}
+                                strokeColor={COLORS.indigo}
+                                precision="high"
+                                mode="DRIVING"
+                                optimizeWaypoints={false}
+                                onReady={(result) => {
+                                    setEtaData({
+                                        distance: result.distance.toFixed(1) + ' km',
+                                        duration: Math.round(result.duration) + ' min'
+                                    });
+                                }}
+                                onError={(error) => console.warn('Directions error:', error)}
+                            />
+                        )}
+                    </MapView>
+
+                    {/* Live ETA Badge */}
+                    {technicianLocation && (
+                        <View style={styles.etaBadge}>
+                            <Ionicons name="time" size={16} color={COLORS.white} />
+                            <Text style={styles.etaText}>Technician arrives in {etaData.duration} • {etaData.distance}</Text>
+                        </View>
+                    )}
+                </View>
+            )}
+
             <View style={styles.otpCard}>
                 <LinearGradient
                     colors={['rgba(79, 70, 229, 0.05)', 'rgba(79, 70, 229, 0.02)']}
@@ -277,21 +381,68 @@ const styles = StyleSheet.create({
     },
     mainContent: {
         flex: 1,
-        paddingHorizontal: 24,
     },
     centerContainer: {
         flex: 1,
+    },
+    mapContainer: {
+        width: '100%',
+        height: 350,
+        backgroundColor: '#eee',
+        marginBottom: 20,
+        overflow: 'hidden',
+        borderBottomLeftRadius: 30,
+        borderBottomRightRadius: 30,
+        ...SHADOWS.medium,
+    },
+    map: {
+        width: '100%',
+        height: '100%',
+    },
+    techMarker: {
+        width: 50,
+        height: 50,
+        backgroundColor: '#fff',
+        borderRadius: 25,
         justifyContent: 'center',
         alignItems: 'center',
+        ...SHADOWS.medium,
+        borderWidth: 2,
+        borderColor: COLORS.indigo,
+    },
+    destMarker: {
+        padding: 8,
+        backgroundColor: '#fff',
+        borderRadius: 15,
+        ...SHADOWS.medium,
+    },
+    etaBadge: {
+        position: 'absolute',
+        bottom: 20,
+        alignSelf: 'center',
+        backgroundColor: COLORS.indigo,
+        paddingHorizontal: 20,
+        paddingVertical: 10,
+        borderRadius: 15,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        ...SHADOWS.heavy,
+    },
+    etaText: {
+        color: '#fff',
+        fontWeight: 'bold',
+        fontSize: 14,
     },
     otpCard: {
-        width: '100%',
+        width: width - 48,
+        marginHorizontal: 24,
         borderRadius: 24,
         backgroundColor: '#fff',
         borderWidth: 1.5,
         borderColor: COLORS.indigo,
         overflow: 'hidden',
-        marginBottom: 40,
+        marginVertical: 20,
         ...SHADOWS.medium,
     },
     otpGradient: {
