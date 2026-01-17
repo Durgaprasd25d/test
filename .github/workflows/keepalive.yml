@@ -1,15 +1,16 @@
 name: Keep Render Backend Alive
 
 on:
+  push:
+    paths:
+      - 'realtime-track/backend/**'
   schedule:
-    # Run every 13 minutes to prevent Render free tier from sleeping
     - cron: '*/13 * * * *'
-  workflow_dispatch: # Allow manual trigger
+  workflow_dispatch:
 
 jobs:
   keepalive:
     runs-on: ubuntu-latest
-    
     steps:
       - name: Ping keepalive endpoint
         run: |
