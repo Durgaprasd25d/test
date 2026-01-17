@@ -153,7 +153,7 @@ export default function AuthScreen({ navigation }) {
                             <View style={styles.card}>
                                 {!isOtpSent ? (
                                     <>
-                                        <View style={styles.tabContainer}>
+                                        {/* <View style={styles.tabContainer}>
                                             <TouchableOpacity
                                                 style={[styles.tab, authMode === 'password' && styles.activeTab]}
                                                 onPress={() => {
@@ -172,7 +172,7 @@ export default function AuthScreen({ navigation }) {
                                             >
                                                 <Text style={[styles.tabText, authMode === 'otp' && styles.activeTabText]}>PHONE OTP</Text>
                                             </TouchableOpacity>
-                                        </View>
+                                        </View> */}
 
                                         <View style={styles.inputSection}>
                                             {isRegistering && (
@@ -249,9 +249,7 @@ export default function AuthScreen({ navigation }) {
                                             >
                                                 {loading ? <ActivityIndicator color={COLORS.white} /> : (
                                                     <Text style={styles.btnText}>
-                                                        {authMode === 'password'
-                                                            ? (isRegistering ? 'REGISTER' : 'LOGIN')
-                                                            : (isRegistering ? 'REGISTER VIA OTP' : 'SEND OTP')}
+                                                        {isRegistering ? 'REGISTER' : 'LOGIN'}
                                                     </Text>
                                                 )}
                                             </TouchableOpacity>
