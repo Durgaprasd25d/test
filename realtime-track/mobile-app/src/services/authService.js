@@ -113,6 +113,10 @@ const authService = {
     getUser: async () => {
         const user = await AsyncStorage.getItem('userData');
         return user ? JSON.parse(user) : null;
+    },
+
+    setUser: async (user) => {
+        await AsyncStorage.setItem('userData', JSON.stringify(user));
     }
 };
 

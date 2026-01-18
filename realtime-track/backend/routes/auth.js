@@ -147,4 +147,45 @@ router.post('/fcm-token', async (req, res) => {
     }
 });
 
+
+// Update Profile
+router.put('/update-profile', async (req, res) => {
+    try {
+        const { userId, name, email } = req.body;
+
+        if (!userId) {
+            return res.status(400).json({ success: false, message: 'User ID is required' });
+        }
+
+        const updateData = {};
+        if (name) updateData.name = name;
+        if (email) updateData.email = email;
+
+        const user = await User.findByIdAndUpdate(
+            userId,
+            updateData,
+            { new: true, runValidators: true }
+        );
+
+        if (!user) {
+            return res.status(404).json({ success: false, message: 'User not found' });
+        }
+
+        res.json({
+            success: true,
+            message: 'Profile updated successfully',
+            user: {
+                id: user._id,
+                mobile: user.mobile,
+                name: user.name,
+                email: user.email,
+                role: user.role
+            }
+        });
+    } catch (err) {
+        console.error('Update profile error:', err);
+        res.status(500).json({ success: false, message: 'Internal server error' });
+    }
+});
+
 module.exports = router;

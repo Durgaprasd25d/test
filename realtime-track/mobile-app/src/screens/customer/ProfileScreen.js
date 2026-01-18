@@ -8,7 +8,10 @@ import {
     Platform,
     StatusBar,
     Alert,
-    Dimensions
+    Dimensions,
+    Modal,
+    TextInput,
+    ActivityIndicator
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -31,6 +34,13 @@ const PREMIUM_COLORS = {
 
 export default function ProfileScreen({ navigation }) {
     const [user, setUser] = useState(null);
+    const [showEditModal, setShowEditModal] = useState(false);
+    const [editForm, setEditForm] = useState({
+        name: '',
+        email: '',
+        mobile: ''
+    });
+    const [saving, setSaving] = useState(false);
 
     useEffect(() => {
         loadUser();
@@ -39,6 +49,69 @@ export default function ProfileScreen({ navigation }) {
     const loadUser = async () => {
         const userData = await authService.getUser();
         setUser(userData);
+        if (userData) {
+            setEditForm({
+                name: userData.name || '',
+                email: userData.email || '',
+                mobile: userData.mobile || ''
+            });
+        }
+    };
+
+    const handleEditProfile = () => {
+        setEditForm({
+            name: user?.name || '',
+            email: user?.email || '',
+            mobile: user?.mobile || ''
+        });
+        setShowEditModal(true);
+    };
+
+    const handleSaveProfile = async () => {
+        // Validation
+        if (!editForm.name.trim()) {
+            Alert.alert('Error', 'Name cannot be empty');
+            return;
+        }
+
+        if (editForm.email && !editForm.email.includes('@')) {
+            Alert.alert('Error', 'Please enter a valid email');
+            return;
+        }
+
+        setSaving(true);
+        try {
+            const response = await fetch(`${process.env.EXPO_PUBLIC_BACKEND_URL}/api/auth/update-profile`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    userId: user.id || user._id,
+                    name: editForm.name,
+                    email: editForm.email
+                })
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                // Update local user data
+                const updatedUser = { ...user, ...editForm };
+                setUser(updatedUser);
+                await authService.setUser(updatedUser);
+
+                setShowEditModal(false);
+                Alert.alert('Success', 'Profile updated successfully');
+            } else {
+                Alert.alert('Error', result.message || 'Failed to update profile');
+            }
+        } catch (error) {
+            console.error('Update profile error:', error);
+            Alert.alert('Error', 'Failed to update profile. Please try again.');
+        } finally {
+            setSaving(false);
+        }
     };
 
     const handleLogout = () => {
@@ -104,7 +177,7 @@ export default function ProfileScreen({ navigation }) {
                         <ProfileMenuItem
                             icon="person-outline"
                             label="Edit Profile"
-                            onPress={() => { }}
+                            onPress={handleEditProfile}
                         />
                         <View style={styles.separator} />
                         <ProfileMenuItem
@@ -143,6 +216,83 @@ export default function ProfileScreen({ navigation }) {
                 <Text style={styles.versionText}>Version 1.2.0 • Build 2026.01.02</Text>
                 <View style={{ height: 40 }} />
             </ScrollView>
+
+            {/* Edit Profile Modal */}
+            <Modal
+                visible={showEditModal}
+                animationType="slide"
+                transparent={true}
+                onRequestClose={() => setShowEditModal(false)}
+            >
+                <View style={styles.modalOverlay}>
+                    <View style={styles.modalContent}>
+                        <View style={styles.modalHeader}>
+                            <Text style={styles.modalTitle}>Edit Profile</Text>
+                            <TouchableOpacity onPress={() => setShowEditModal(false)}>
+                                <Ionicons name="close" size={24} color={PREMIUM_COLORS.textMain} />
+                            </TouchableOpacity>
+                        </View>
+
+                        <View style={styles.modalBody}>
+                            <View style={styles.inputGroup}>
+                                <Text style={styles.inputLabel}>Full Name</Text>
+                                <TextInput
+                                    style={styles.input}
+                                    value={editForm.name}
+                                    onChangeText={(text) => setEditForm({ ...editForm, name: text })}
+                                    placeholder="Enter your name"
+                                    placeholderTextColor={PREMIUM_COLORS.textMuted}
+                                />
+                            </View>
+
+                            <View style={styles.inputGroup}>
+                                <Text style={styles.inputLabel}>Email (Optional)</Text>
+                                <TextInput
+                                    style={styles.input}
+                                    value={editForm.email}
+                                    onChangeText={(text) => setEditForm({ ...editForm, email: text })}
+                                    placeholder="Enter your email"
+                                    placeholderTextColor={PREMIUM_COLORS.textMuted}
+                                    keyboardType="email-address"
+                                    autoCapitalize="none"
+                                />
+                            </View>
+
+                            <View style={styles.inputGroup}>
+                                <Text style={styles.inputLabel}>Mobile Number</Text>
+                                <TextInput
+                                    style={[styles.input, styles.inputDisabled]}
+                                    value={editForm.mobile}
+                                    editable={false}
+                                    placeholderTextColor={PREMIUM_COLORS.textMuted}
+                                />
+                                <Text style={styles.inputHint}>Mobile number cannot be changed</Text>
+                            </View>
+                        </View>
+
+                        <View style={styles.modalFooter}>
+                            <TouchableOpacity
+                                style={[styles.modalBtn, styles.cancelBtn]}
+                                onPress={() => setShowEditModal(false)}
+                                disabled={saving}
+                            >
+                                <Text style={styles.cancelBtnText}>Cancel</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={[styles.modalBtn, styles.saveBtn]}
+                                onPress={handleSaveProfile}
+                                disabled={saving}
+                            >
+                                {saving ? (
+                                    <ActivityIndicator color="#fff" size="small" />
+                                ) : (
+                                    <Text style={styles.saveBtnText}>Save Changes</Text>
+                                )}
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+            </Modal>
         </View>
     );
 }
@@ -310,5 +460,90 @@ const styles = StyleSheet.create({
         fontSize: 12,
         color: PREMIUM_COLORS.textMuted,
         fontWeight: '600',
+    },
+    // Modal Styles
+    modalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        justifyContent: 'flex-end',
+    },
+    modalContent: {
+        backgroundColor: '#fff',
+        borderTopLeftRadius: 32,
+        borderTopRightRadius: 32,
+        paddingBottom: Platform.OS === 'ios' ? 40 : 20,
+        maxHeight: '80%',
+    },
+    modalHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        padding: 24,
+        borderBottomWidth: 1,
+        borderBottomColor: '#f1f5f9',
+    },
+    modalTitle: {
+        fontSize: 20,
+        fontWeight: '900',
+        color: PREMIUM_COLORS.textMain,
+    },
+    modalBody: {
+        padding: 24,
+    },
+    inputGroup: {
+        marginBottom: 20,
+    },
+    inputLabel: {
+        fontSize: 14,
+        fontWeight: '700',
+        color: PREMIUM_COLORS.textMain,
+        marginBottom: 8,
+    },
+    input: {
+        backgroundColor: '#f8fafc',
+        borderRadius: 16,
+        padding: 16,
+        fontSize: 16,
+        color: PREMIUM_COLORS.textMain,
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
+    },
+    inputDisabled: {
+        backgroundColor: '#f1f5f9',
+        color: PREMIUM_COLORS.textMuted,
+    },
+    inputHint: {
+        fontSize: 12,
+        color: PREMIUM_COLORS.textMuted,
+        marginTop: 6,
+        marginLeft: 4,
+    },
+    modalFooter: {
+        flexDirection: 'row',
+        gap: 12,
+        paddingHorizontal: 24,
+    },
+    modalBtn: {
+        flex: 1,
+        height: 56,
+        borderRadius: 16,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    cancelBtn: {
+        backgroundColor: '#f1f5f9',
+    },
+    cancelBtnText: {
+        fontSize: 16,
+        fontWeight: '800',
+        color: PREMIUM_COLORS.textMain,
+    },
+    saveBtn: {
+        backgroundColor: PREMIUM_COLORS.indigo,
+    },
+    saveBtnText: {
+        fontSize: 16,
+        fontWeight: '800',
+        color: '#fff',
     },
 });
