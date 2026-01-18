@@ -70,10 +70,7 @@
         "expo-notifications",
         {
           "icon": "./assets/logo.png",
-          "color": "#8D5159",
-          "sounds": [
-            "./assets/notification_sound.wav"
-          ]
+          "color": "#8D5159"
         }
       ],
       "@react-native-firebase/app",

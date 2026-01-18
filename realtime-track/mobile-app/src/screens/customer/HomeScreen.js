@@ -255,7 +255,7 @@ export default function HomeScreen({ navigation }) {
             </View>
 
             {/* Floating Active Booking Button */}
-            {activeRide && (
+            {activeRide && activeRide.status !== 'COMPLETED' && (
                 <TouchableOpacity
                     style={styles.floatingActiveBtn}
                     onPress={() => navigation.navigate('ServiceStatus', {
